@@ -15,7 +15,7 @@ Most agents read the shared `~/.agents/skills` directory, and Claude Code reads 
 
 This was checked against each agent's code on one machine; OpenCode, Copilot, and Muse Code were not confirmed. Add other directories as targets when an agent needs its own, for example `~/.config/opencode/skills` or `~/.copilot/skills`; the add dialog suggests these. Deploying the same skill to several directories that one agent reads can make that agent list it twice.
 
-The interface language can follow the system or be set to English or Simplified Chinese. Settings are stored on each daemon host, so every host is configured separately, and all file operations run on the selected host.
+The interface language can follow the system or be set to English or Simplified Chinese. Settings are stored in a local file on each daemon host (`~/.config/paseo-skill-hub/config.json`, or `%APPDATA%\paseo-skill-hub\config.json` on Windows), so every host is configured separately and the configuration survives uninstalling and reinstalling the plugin. All file operations run on the selected host.
 
 ## Usage
 

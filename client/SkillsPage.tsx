@@ -14,7 +14,7 @@ import {
   readSkillRpc,
   type Skill,
 } from "../shared/contracts";
-import { SCAN_KEY, useHub } from "./data";
+import { CONFIG_KEY, SCAN_KEY, useHub } from "./data";
 import { localizeError, type MessageKey, type Translate } from "./i18n";
 import { pullSummary, usePull } from "./pull";
 import { targetLabel, targetReaders, tildify } from "./targets";
@@ -95,7 +95,11 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
   const missingSources = data?.sources.filter((source) => !source.exists) ?? [];
   const git = usePull(data?.sources ?? []);
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: SCAN_KEY });
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: CONFIG_KEY }),
+      queryClient.invalidateQueries({ queryKey: SCAN_KEY }),
+    ]);
 
   async function run(ops: LinkOp[], skipped = 0) {
     if (ops.length === 0) return;

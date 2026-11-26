@@ -216,6 +216,9 @@ export function SettingsPage() {
             onValueChange={(language) => void save({ ...values, language })}
           />
         </SettingsCard>
+        <Text selectable style={{ color: colors.foregroundMuted, fontSize: 12 }}>
+          {t("settings.storageNote", { path: settings.path })}
+        </Text>
       </Section>
 
       {editing?.kind === "source" ? (

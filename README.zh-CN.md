@@ -8,7 +8,7 @@
 [English](README.md) · **简体中文**
 
 [![Paseo ≥ 0.17.4](https://img.shields.io/badge/Paseo-%E2%89%A5%200.17.4-1f7a4d?style=flat-square)](https://paseo.sh)
-[![官方市场：审核中](https://img.shields.io/badge/Paseo%20%E6%8F%92%E4%BB%B6%E5%B8%82%E5%9C%BA-%E5%AE%A1%E6%A0%B8%E4%B8%AD%20(%233344)-d97706?style=flat-square)](https://github.com/getpaseo/plugins/pull/3344)
+[![官方市场：已上架](https://img.shields.io/badge/Paseo%20%E6%8F%92%E4%BB%B6%E5%B8%82%E5%9C%BA-%E5%B7%B2%E4%B8%8A%E6%9E%B6-1f7a4d?style=flat-square)](https://paseo.sh/plugins)
 [![平台：桌面 · 网页 · 移动端](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-%E6%A1%8C%E9%9D%A2%20%C2%B7%20%E7%BD%91%E9%A1%B5%20%C2%B7%20%E7%A7%BB%E5%8A%A8%E7%AB%AF-3b82f6?style=flat-square)](#核心特性)
 [![界面：English · 简体中文](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-English%20%C2%B7%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-4b5563?style=flat-square)](#配置说明)
 [![运行时依赖：0](https://img.shields.io/badge/%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-0-4b5563?style=flat-square)](package.json)
@@ -66,7 +66,7 @@ flowchart LR
 - **内置 `SKILL.md` 预览**：点击任意 Skill 名称，部署前即可查看 frontmatter 描述、源路径、已部署目标和渲染后的 Markdown 正文。
 - **以磁盘状态为准**：每次刷新直接读取文件系统。已有软链接（包括相对链接）自动识别为已部署；同名占用标记为冲突；失效链接集中列出供确认后清理。
 - **安全的 Git 来源拉取**：在设置中可逐个仓库拉取，也可点击「全部拉取」一次更新所有 Git 来源，每个仓库独立展示进度与结果。
-- **按 Host 独立配置**：配置保存在各个 Paseo daemon 主机上，所有扫描、链接和拉取操作都在当前选中的 Host 上执行。
+- **按 Host 持久化配置**：每个 daemon 主机把来源目录、目标目录和界面语言保存在本地 JSON 文件中，卸载、重装插件后配置依然保留；所有扫描、链接和拉取操作都在当前选中的 Host 上执行。
 - **多端适配与双语界面**：支持桌面端、网页端和移动端，界面语言可选 English、简体中文或跟随系统。
 
 ## 界面截图
@@ -116,15 +116,23 @@ flowchart LR
 - 已在 daemon 上启用插件：**设置 → 插件 → 启用插件**。
 - daemon 主机已安装 `git`（仅在使用 Git 来源拉取功能时需要）。
 
-### 从 GitHub 安装（立即可用）
+### 从 Paseo 插件市场安装
+
+Skill Hub 已上架 [Paseo 插件市场](https://paseo.sh/plugins)。可在 App 的 **设置 → 插件** 中安装，或使用命令行：
+
+```bash
+paseo plugin add lucaslan666666/skill-hub
+```
+
+### 从 GitHub 安装
+
+如需跟随 `main` 分支最新提交，而非市场审核过的版本：
 
 ```bash
 paseo plugin add github:LucasLan666666/paseo-skill-hub
 ```
 
-如需安装到远程 Paseo daemon，请加上 `--host <host>`。
-
-> **Paseo 官方插件市场状态：** 已提交并处于**审核中**，审核 PR 为 [getpaseo/plugins#3344](https://github.com/getpaseo/plugins/pull/3344)（提交 Issue [#3343](https://github.com/getpaseo/plugins/issues/3343)）。审核通过并正式上架后，也可以直接通过官方插件市场安装。
+以上两条命令均可加上 `--host <host>` 安装到远程 Paseo daemon。在两种安装方式之间切换、或卸载后重装，配置都会保留（见[配置说明](#配置说明)）。
 
 ## 快速上手
 
@@ -135,7 +143,16 @@ paseo plugin add github:LucasLan666666/paseo-skill-hub
 
 ## 配置说明
 
-配置由 Paseo 按 daemon 主机保存在内置插件设置中，无需额外数据库或外部配置文件。
+配置按 daemon 主机保存在该主机上的一个普通 JSON 文件中：
+
+| 平台 | 位置 |
+| --- | --- |
+| Linux / macOS | `$XDG_CONFIG_HOME/paseo-skill-hub/config.json`；未设置 `XDG_CONFIG_HOME` 时为 `~/.config/paseo-skill-hub/config.json` |
+| Windows | `%APPDATA%\paseo-skill-hub\config.json` |
+
+该文件位于 Paseo 插件目录之外，因此**卸载或重装插件不会丢失来源目录、目标目录和语言设置**。删除该文件即可恢复默认配置。具体路径显示在 **设置** 页底部。写入是原子操作；其他客户端同时修改时会提示冲突，而不是直接覆盖。
+
+从 0.1.x 升级时，新版本首次启动会把 Paseo 之前为插件保存的配置自动迁移到该文件。
 
 ### 默认与常用目标目录
 
@@ -210,8 +227,8 @@ paseo plugin reload skill-hub   # 修改源码后重新加载
 | 路径 | 说明 |
 | --- | --- |
 | `index.client.tsx`、`client/` | React Native 主页面、矩阵视图、预览弹窗、设置页与国际化 |
-| `index.server.ts`、`server/` | Skill 发现、软链接管理、frontmatter 解析与 Git 拉取 |
-| `shared/` | 按 Host 存储的配置 Schema（`v2`，含 `v1` 迁移）与 RPC 契约 |
+| `index.server.ts`、`server/` | Skill 发现、软链接管理、frontmatter 解析、Git 拉取与持久化配置存储 |
+| `shared/` | 配置 Schema（`v2`，含 `v1` 迁移）与 RPC 契约 |
 | `tests/` | 基于 Node 测试运行器、在真实临时目录上执行的测试套件 |
 
 ## 致谢

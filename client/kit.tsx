@@ -1,9 +1,8 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { useSettings } from "@getpaseo/plugin/client";
 import { Icon, Modal, TextInput } from "@getpaseo/plugin/client/ui";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { Platform, Pressable, StyleSheet, Text, type TextInputProps, View } from "react-native";
-import { configSettings } from "../shared/config";
+import { useConfig, useConfigSync } from "./data";
 import { type Lang, resolveLang, type Translate, translator } from "./i18n";
 
 type Colors = PluginTheme["colors"];
@@ -30,7 +29,8 @@ export function KitProvider({
   compact: boolean;
   children: ReactNode;
 }) {
-  const settings = useSettings(configSettings);
+  useConfigSync();
+  const settings = useConfig();
   const lang = resolveLang(settings.status === "ready" ? settings.values.language : undefined);
   const value = useMemo(
     () => ({ colors: theme.colors, compact, lang, t: translator(lang) }),

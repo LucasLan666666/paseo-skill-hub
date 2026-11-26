@@ -15,7 +15,7 @@ Skill Hub 在 Paseo 侧边栏中添加一个入口，用一张 Skill × 目标�
 
 以上结论是在一台机器上对照各 Agent 的代码核实的；OpenCode、Copilot 和 Muse Code 未确认。某个 Agent 需要专用目录时，可以添加为目标目录，例如 `~/.config/opencode/skills` 或 `~/.copilot/skills`，添加对话框里有这些常用目录可选。把同一个 Skill 部署到同一 Agent 会读取的多个目录，可能让它出现两次。
 
-界面语言可选跟随系统、English 或简体中文。配置保存在每个 daemon 主机上，不同 Host 各自独立；所有文件操作都在当前选中的 Host 上执行。
+界面语言可选跟随系统、English 或简体中文。配置保存在每个 daemon 主机的本地文件中（`~/.config/paseo-skill-hub/config.json`，Windows 上为 `%APPDATA%\paseo-skill-hub\config.json`），不同 Host 各自独立，卸载重装插件后配置依然保留；所有文件操作都在当前选中的 Host 上执行。
 
 ## 使用
 

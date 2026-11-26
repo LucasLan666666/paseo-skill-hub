@@ -1,6 +1,8 @@
 import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
 
+export const CONFIG_VERSION = 2;
+
 const targetSchema = z.object({
   id: z.string().min(1),
   /** Optional display name; known directories get a built-in label when empty. */
@@ -30,44 +32,51 @@ const V1_AGENT_DIRS: Record<string, string> = {
   muse: "~/.config/muse/skills",
 };
 
+export const hubConfigSchema = z.object({
+  sources: z.array(z.string()).default([]),
+  targets: z.array(targetSchema).default(DEFAULT_TARGETS),
+  language: z.enum(["system", "en", "zh-CN"]).default("system"),
+});
+
 /**
- * Host-scoped document: every daemon keeps its own sources and target directories.
+ * Version 1 listed agents. Every directory that was visible in its matrix becomes a target, so
+ * links already deployed there stay visible; agents that were switched off are dropped.
+ */
+export function migrateHubConfig(values: unknown): unknown {
+  const old = (values ?? {}) as {
+    sources?: unknown;
+    language?: unknown;
+    agents?: { id?: string; name?: string; path?: string; enabled?: boolean }[];
+  };
+  const stored = old.agents ?? [];
+  const visible: Target[] = [];
+  for (const [id, path] of Object.entries(V1_AGENT_DIRS)) {
+    const entry = stored.find((a) => a.id === id);
+    if (entry?.enabled !== false) visible.push({ id, name: "", path: entry?.path?.trim() || path });
+  }
+  for (const a of stored) {
+    if (a.id && !(a.id in V1_AGENT_DIRS) && a.path && a.enabled !== false) {
+      visible.push({ id: a.id, name: a.name ?? "", path: a.path });
+    }
+  }
+  const targets = [...DEFAULT_TARGETS];
+  for (const target of visible) if (!targets.some((t) => t.path === target.path)) targets.push(target);
+  return { sources: old.sources, language: old.language, targets };
+}
+
+/**
+ * Legacy Paseo-managed settings definition, kept so existing installations automatically migrate
+ * their settings into Skill Hub's persistent local config file on first load.
  */
 export const configSettings = defineSettings({
   id: "config",
   scope: "host",
-  version: 2,
-  schema: z.object({
-    sources: z.array(z.string()).default([]),
-    targets: z.array(targetSchema).default(DEFAULT_TARGETS),
-    language: z.enum(["system", "en", "zh-CN"]).default("system"),
-  }),
-  // Version 1 listed agents. Every directory that was visible in its matrix becomes a target, so
-  // links already deployed there stay visible; agents that were switched off are dropped.
-  migrate(values) {
-    const old = (values ?? {}) as {
-      sources?: unknown;
-      language?: unknown;
-      agents?: { id?: string; name?: string; path?: string; enabled?: boolean }[];
-    };
-    const stored = old.agents ?? [];
-    const visible: Target[] = [];
-    for (const [id, path] of Object.entries(V1_AGENT_DIRS)) {
-      const entry = stored.find((a) => a.id === id);
-      if (entry?.enabled !== false) visible.push({ id, name: "", path: entry?.path?.trim() || path });
-    }
-    for (const a of stored) {
-      if (a.id && !(a.id in V1_AGENT_DIRS) && a.path && a.enabled !== false) {
-        visible.push({ id: a.id, name: a.name ?? "", path: a.path });
-      }
-    }
-    const targets = [...DEFAULT_TARGETS];
-    for (const target of visible) if (!targets.some((t) => t.path === target.path)) targets.push(target);
-    return { sources: old.sources, language: old.language, targets };
-  },
+  version: CONFIG_VERSION,
+  schema: hubConfigSchema,
+  migrate: migrateHubConfig,
 });
 
-export type HubConfig = z.infer<typeof configSettings.schema>;
+export type HubConfig = z.infer<typeof hubConfigSchema>;
 export type LanguageChoice = HubConfig["language"];
 
 /**

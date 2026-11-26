@@ -8,7 +8,7 @@
 **English** · [简体中文](README.zh-CN.md)
 
 [![Paseo ≥ 0.17.4](https://img.shields.io/badge/Paseo-%E2%89%A5%200.17.4-1f7a4d?style=flat-square)](https://paseo.sh)
-[![Registry: Under Review](https://img.shields.io/badge/Paseo%20Registry-Under%20Review%20(%233344)-d97706?style=flat-square)](https://github.com/getpaseo/plugins/pull/3344)
+[![Paseo Registry: Published](https://img.shields.io/badge/Paseo%20Registry-Published-1f7a4d?style=flat-square)](https://paseo.sh/plugins)
 [![Platform: Desktop · Web · Mobile](https://img.shields.io/badge/platform-Desktop%20%C2%B7%20Web%20%C2%B7%20Mobile-3b82f6?style=flat-square)](#features)
 [![UI: English · 简体中文](https://img.shields.io/badge/UI-English%20%C2%B7%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-4b5563?style=flat-square)](#configuration)
 [![Runtime dependencies: 0](https://img.shields.io/badge/runtime%20deps-0-4b5563?style=flat-square)](package.json)
@@ -66,7 +66,7 @@ Most agents read the shared `~/.agents/skills`; Claude Code reads `~/.claude/ski
 - **Built-in `SKILL.md` preview.** Tap any skill name to inspect its frontmatter description, source path, active targets, and rendered Markdown before deploying.
 - **Live filesystem truth.** Every refresh reads disk directly. Existing symlinks (including relative links) show as deployed; occupied paths show as conflicts; dangling links are surfaced for confirmed cleanup.
 - **Safe git pulls.** Pull a single repository from its row in Settings, or update all git sources at once with **Pull all**, with per-repository progress and result feedback.
-- **Per-host settings.** Each Paseo daemon stores its own sources, target directories, and language choice, and all file operations run on the currently selected host.
+- **Persistent per-host settings.** Each daemon host keeps its own sources, target directories, and language in a local JSON file that survives uninstalling and reinstalling the plugin. All file operations run on the currently selected host.
 - **Cross-platform & bilingual UI.** Works on Desktop, Web, and Mobile in English, Simplified Chinese, or following the system language.
 
 ## Screenshots
@@ -116,15 +116,23 @@ A **Duplicate** tag indicates that two configured sources contain a skill folder
 - Plugins enabled on the daemon: **Settings → Plugins → Enable plugins**.
 - `git` on the daemon host (only required if you use **Pull** / **Pull all** on git sources).
 
-### Install from GitHub (available now)
+### From the Paseo plugin registry
+
+Skill Hub is listed in the [Paseo plugin registry](https://paseo.sh/plugins). Install it from **Settings → Plugins** in the app, or from the command line:
+
+```bash
+paseo plugin add lucaslan666666/skill-hub
+```
+
+### From GitHub
+
+To track the latest commit on `main` instead of the reviewed registry version:
 
 ```bash
 paseo plugin add github:LucasLan666666/paseo-skill-hub
 ```
 
-Add `--host <host>` to install on a remote Paseo daemon.
-
-> **Official Paseo Plugin Registry status:** Submitted and currently **under review** in [getpaseo/plugins#3344](https://github.com/getpaseo/plugins/pull/3344) (submission issue [#3343](https://github.com/getpaseo/plugins/issues/3343)). Once approved and published, you will also be able to install directly from the Paseo plugin marketplace.
+Add `--host <host>` to either command to install on a remote Paseo daemon. Your settings are kept when you switch between the two, or uninstall and reinstall (see [Configuration](#configuration)).
 
 ## Quick start
 
@@ -135,7 +143,16 @@ Add `--host <host>` to install on a remote Paseo daemon.
 
 ## Configuration
 
-Settings are stored per daemon host in Paseo's plugin settings (no extra database or external config file).
+Settings are stored per daemon host in a plain JSON file on that host:
+
+| Platform | Location |
+| --- | --- |
+| Linux / macOS | `$XDG_CONFIG_HOME/paseo-skill-hub/config.json`, or `~/.config/paseo-skill-hub/config.json` when `XDG_CONFIG_HOME` is unset |
+| Windows | `%APPDATA%\paseo-skill-hub\config.json` |
+
+The file lives outside Paseo's plugin directory, so **uninstalling or reinstalling the plugin keeps your sources, targets, and language**. Delete the file to start from defaults. The exact path is shown at the bottom of **Settings**. Writes are atomic, and edits made on another client are detected rather than overwritten.
+
+Upgrading from 0.1.x copies settings that Paseo stored for the plugin into this file the first time the new version starts.
 
 ### Default & known target directories
 
@@ -210,8 +227,8 @@ paseo plugin reload skill-hub   # after changing source files
 | Path | Contents |
 | --- | --- |
 | `index.client.tsx`, `client/` | React Native screen, matrix view, preview modal, settings, and i18n |
-| `index.server.ts`, `server/` | Skill discovery, symlink management, frontmatter parsing, and git pulls |
-| `shared/` | Host-scoped settings schema (`v2` with `v1` migration) and RPC contracts |
+| `index.server.ts`, `server/` | Skill discovery, symlink management, frontmatter parsing, git pulls, and the persistent config store |
+| `shared/` | Settings schema (`v2` with `v1` migration) and RPC contracts |
 | `tests/` | Node test runner suite running against real temporary directories |
 
 ## Acknowledgements

@@ -9,6 +9,8 @@ import { configSettings, DEFAULT_TARGETS } from "../shared/config";
 import { parseSkillDoc } from "../server/frontmatter";
 import { apply, expandPath, prune, pull, readSkill, scan } from "../server/skills";
 import { gitInfo } from "../server/git";
+import { createConfigStore, defaultConfigPath } from "../server/store";
+import { readFile } from "node:fs/promises";
 import { ERROR_CODES } from "../shared/contracts";
 import { localizeError, type MessageKey, translator } from "../client/i18n";
 import { targetLabel, tildify } from "../client/targets";
@@ -378,5 +380,98 @@ describe("pull feedback", () => {
     assert.equal(pullStatus(zh, false, ok("~/a", true)), "已更新");
     assert.equal(pullStatus(zh, false, ok("~/a", false)), "已是最新");
     assert.equal(pullStatus(zh, false, { source: "~/a", ok: false, changed: false, message: "x" }), null);
+  });
+});
+
+describe("persistent config store", () => {
+  test("resolves a config path outside Paseo's plugin-settings directory", () => {
+    assert.equal(defaultConfigPath("/home/u", "linux", {}), "/home/u/.config/paseo-skill-hub/config.json");
+    assert.equal(
+      defaultConfigPath("/home/u", "linux", { XDG_CONFIG_HOME: "/xdg" }),
+      "/xdg/paseo-skill-hub/config.json",
+    );
+    assert.equal(
+      defaultConfigPath("/home/u", "linux", { XDG_CONFIG_HOME: "relative" }),
+      "/home/u/.config/paseo-skill-hub/config.json",
+    );
+    assert.equal(
+      defaultConfigPath("C:\\Users\\u", "win32", { APPDATA: "C:\\Users\\u\\AppData\\Roaming" }),
+      "C:\\Users\\u\\AppData\\Roaming\\paseo-skill-hub\\config.json",
+    );
+  });
+
+  test("saves, survives a new store instance, and rejects stale revisions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "skill-hub-store-"));
+    const filePath = join(dir, "cfg/config.json");
+    const store = createConfigStore({ filePath, home: dir });
+    const initial = await store.read();
+    assert.equal(initial.status, "ready");
+    assert.equal(initial.revision, "missing");
+    assert.equal(initial.path, "~/cfg/config.json");
+
+    const events: string[] = [];
+    const off = store.subscribe((state) => events.push(state.revision));
+    const values = { sources: ["~/skills"], targets: DEFAULT_TARGETS, language: "zh-CN" as const };
+    const saved = await store.write("missing", values);
+    assert.equal(saved.status, "saved");
+    off();
+    assert.equal(events.length, 1);
+    assert.equal(JSON.parse(await readFile(filePath, "utf8")).version, 2);
+
+    // A fresh store (as after uninstall + reinstall) reads the same values back.
+    const again = await createConfigStore({ filePath, home: dir }).read();
+    assert.equal(again.status, "ready");
+    assert.deepEqual(again.status === "ready" && again.values, values);
+
+    assert.equal((await store.write("missing", values)).status, "conflict");
+    assert.equal((await store.write(again.revision, { sources: "nope" })).status, "invalid");
+
+    const reset = await store.reset(again.revision);
+    assert.equal(reset.status, "saved");
+    assert.deepEqual(reset.status === "saved" && reset.values.targets, DEFAULT_TARGETS);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("imports legacy Paseo settings once and migrates version 1 files", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "skill-hub-store-"));
+    const legacyValues = { sources: ["~/legacy"], targets: DEFAULT_TARGETS, language: "en" as const };
+    let legacyReads = 0;
+    const filePath = join(dir, "config.json");
+    const store = createConfigStore({
+      filePath,
+      home: dir,
+      readLegacy: async () => {
+        legacyReads++;
+        return { status: "ready", revision: "abc", values: legacyValues };
+      },
+    });
+    const state = await store.read();
+    assert.deepEqual(state.status === "ready" && state.values, legacyValues);
+    await store.read();
+    assert.equal(legacyReads, 1);
+    assert.ok(JSON.parse(await readFile(filePath, "utf8")).values.sources.includes("~/legacy"));
+
+    // Absent legacy settings leave the file uncreated.
+    const emptyPath = join(dir, "empty/config.json");
+    const empty = createConfigStore({
+      filePath: emptyPath,
+      home: dir,
+      readLegacy: async () => ({ status: "ready", revision: "missing", values: legacyValues }),
+    });
+    assert.equal((await empty.read()).revision, "missing");
+    await assert.rejects(readFile(emptyPath, "utf8"));
+
+    // A version 1 file is migrated in place.
+    const v1Path = join(dir, "v1/config.json");
+    await mkdir(join(dir, "v1"));
+    await writeFile(v1Path, JSON.stringify({ version: 1, values: { sources: ["~/x"], agents: [] } }));
+    const v1 = await createConfigStore({ filePath: v1Path, home: dir }).read();
+    assert.equal(v1.status, "ready");
+    assert.equal(JSON.parse(await readFile(v1Path, "utf8")).version, 2);
+
+    // Corrupt files are reported, not overwritten.
+    await writeFile(v1Path, "{ not json");
+    assert.equal((await createConfigStore({ filePath: v1Path, home: dir }).read()).status, "invalid");
+    await rm(dir, { recursive: true, force: true });
   });
 });

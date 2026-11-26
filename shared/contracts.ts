@@ -1,5 +1,6 @@
-import { defineRpc } from "@getpaseo/plugin";
+import { defineRpc, defineSubscription } from "@getpaseo/plugin";
 import { z } from "zod";
+import { hubConfigSchema } from "./config";
 
 /**
  * Deployment state of one skill in one target directory, read from the file system:
@@ -80,6 +81,70 @@ const scanResultSchema = z.object({
   home: z.string(),
 });
 export type ScanResult = z.infer<typeof scanResultSchema>;
+
+export const configStateSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("ready"),
+    revision: z.string(),
+    values: hubConfigSchema,
+    /** Local file path on the daemon host where settings persist across reinstalls. */
+    path: z.string(),
+  }),
+  z.object({
+    status: z.literal("invalid"),
+    revision: z.string(),
+    error: z.string(),
+    path: z.string(),
+  }),
+]);
+export type ConfigState = z.infer<typeof configStateSchema>;
+
+export const configWriteResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("saved"),
+    revision: z.string(),
+    values: hubConfigSchema,
+    path: z.string(),
+  }),
+  z.object({
+    status: z.literal("conflict"),
+    error: z.string(),
+  }),
+  z.object({
+    status: z.literal("invalid"),
+    error: z.string(),
+  }),
+]);
+export type ConfigWriteResult = z.infer<typeof configWriteResultSchema>;
+
+export const readConfigRpc = defineRpc({
+  name: "hub.config.read",
+  input: z.object({}),
+  output: configStateSchema,
+});
+
+export const writeConfigRpc = defineRpc({
+  name: "hub.config.write",
+  input: z.object({
+    revision: z.string(),
+    values: hubConfigSchema,
+  }),
+  output: configWriteResultSchema,
+});
+
+export const resetConfigRpc = defineRpc({
+  name: "hub.config.reset",
+  input: z.object({
+    revision: z.string(),
+  }),
+  output: configWriteResultSchema,
+});
+
+export const watchConfigSub = defineSubscription({
+  name: "hub.config.watch",
+  input: z.object({}),
+  event: configStateSchema,
+});
 
 export const scanRpc = defineRpc({
   name: "hub.scan",
