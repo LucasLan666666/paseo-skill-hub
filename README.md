@@ -1,35 +1,49 @@
 <div align="center">
 
-# Skill Hub
+<img src="docs/banner.png" alt="Skill Hub — A Paseo plugin to manage which skills every coding agent can use" width="100%">
 
-**One place to decide which skills every coding agent can use.**
+<br>
+<br>
 
-A [Paseo](https://paseo.sh) plugin that links your skill folders into the directories Claude Code, Codex, Pi, Oh My Pi, Antigravity and other agents read. No copies, no central store.
+**English** · [简体中文](README.zh-CN.md)
 
-English · [简体中文](README.zh-CN.md)
+[![Paseo ≥ 0.17.4](https://img.shields.io/badge/Paseo-%E2%89%A5%200.17.4-1f7a4d?style=flat-square)](https://paseo.sh)
+[![Registry: Under Review](https://img.shields.io/badge/Paseo%20Registry-Under%20Review%20(%233344)-d97706?style=flat-square)](https://github.com/getpaseo/plugins/pull/3344)
+[![Platform: Desktop · Web · Mobile](https://img.shields.io/badge/platform-Desktop%20%C2%B7%20Web%20%C2%B7%20Mobile-3b82f6?style=flat-square)](#features)
+[![UI: English · 简体中文](https://img.shields.io/badge/UI-English%20%C2%B7%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-4b5563?style=flat-square)](#configuration)
+[![Runtime dependencies: 0](https://img.shields.io/badge/runtime%20deps-0-4b5563?style=flat-square)](package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-4b5563?style=flat-square)](LICENSE)
 
-![Paseo ≥ 0.17.4](https://img.shields.io/badge/Paseo-%E2%89%A5%200.17.4-1f7a4d)
-![Desktop · Web · Mobile](https://img.shields.io/badge/platform-Desktop%20%C2%B7%20Web%20%C2%B7%20Mobile-3b82f6)
-![UI: English · 简体中文](https://img.shields.io/badge/UI-English%20%C2%B7%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-6b7280)
-![Runtime dependencies: 0](https://img.shields.io/badge/runtime%20deps-0-6b7280)
-[![License: MIT](https://img.shields.io/badge/license-MIT-6b7280)](LICENSE)
+<br>
 
-<img src="assets/skills.png" alt="The Skill Hub matrix: skills as rows, target directories as columns, with deployed, empty and conflict cells and two rows selected for a batch action" width="100%">
+*Manage which skills Claude Code, Codex, Pi, Oh My Pi, Antigravity, and other coding agents can use — from one symlink-backed matrix inside [Paseo](https://paseo.sh).*
+
+[Features](#features) · [Install](#install) · [Quick start](#quick-start) · [Configuration](#configuration) · [Safe by design](#safe-by-design) · [FAQ](#faq)
 
 </div>
 
-## Why
+---
 
-Every agent keeps its skills in its own folder. Copy one skill into five folders and you have five copies to keep in sync, with no easy way to tell which agent has which version.
+## Live walkthrough
 
-Skill Hub keeps a single copy of each skill where it already lives, such as a git repository or a personal folder, and creates a symlink wherever an agent should see it. Edit or pull the source once and every agent gets the change.
+<p align="center">
+  <img src="docs/demo.gif" alt="Skill Hub interactive walkthrough: single-click deploy, batch deploy of nested skills, SKILL.md preview, git pull --ff-only, and settings" width="100%">
+  <br>
+  <sub>Toggle single cells, batch-deploy nested skills, preview rendered <code>SKILL.md</code>, and fast-forward pull git sources — all reflected straight on disk.</sub>
+</p>
+
+## Why Skill Hub
+
+Every coding agent reads skills from its own directory. Copying a skill into five agent folders leaves five copies to keep in sync, with no clear view of which agent sees which version.
+
+Skill Hub keeps a single copy of each skill where it already lives — such as a team git repository or your personal folder — and creates a directory symlink wherever an agent should see it. Edit or pull the source once, and every linked agent picks up the change.
 
 ## How it works
 
 ```mermaid
 flowchart LR
   subgraph S["Your skill sources"]
-    A["~/work/team-skills<br/>(git repository)"]
+    A["~/team-skills<br/>(git repository)"]
     B["~/my-skills"]
   end
   subgraph T["Target directories"]
@@ -43,81 +57,114 @@ flowchart LR
   T2 --> R2["Claude Code"]
 ```
 
-Most agents read the shared `~/.agents/skills`; Claude Code reads `~/.claude/skills`. Those two are the default targets, so a new install covers five agents with two columns.
+Most agents read the shared `~/.agents/skills`; Claude Code reads `~/.claude/skills`. Those two are the default targets, so a fresh install covers five agents with two columns.
 
 ## Features
 
-- **Matrix view.** Skills are rows and target directories are columns. Tap a cell to deploy or undeploy, or select rows to deploy or undeploy many at once.
-- **Finds skills anywhere.** Recursively discovers folders with a `SKILL.md`, including skills nested inside other skills, which appear indented under their parent.
-- **Preview.** Tap a skill name to read its description and the rendered `SKILL.md`.
-- **Status from disk.** Every refresh reads the file system. Existing symlinks, including relative ones, show as deployed; occupied names show as conflicts; dangling links are listed for cleanup.
-- **Git sources.** Pull one repository from its row, or all of them with **Pull all**. Each repository reports its own progress and result.
-- **Per host.** Settings are stored on each Paseo daemon, and all file operations run on the selected host.
-- **Desktop, web and phone**, in English or Simplified Chinese, or following the system language.
+- **Matrix view.** Skills are rows and target directories are columns. Tap a cell to deploy or undeploy, or select multiple rows for batch deploy/undeploy across chosen targets.
+- **Recursive discovery with nested skills.** Walks configured sources up to 6 levels deep (skipping hidden folders, `node_modules`, and symlinks) to find every folder containing `SKILL.md`. Skills nested inside another skill appear indented under their parent and deploy independently.
+- **Built-in `SKILL.md` preview.** Tap any skill name to inspect its frontmatter description, source path, active targets, and rendered Markdown before deploying.
+- **Live filesystem truth.** Every refresh reads disk directly. Existing symlinks (including relative links) show as deployed; occupied paths show as conflicts; dangling links are surfaced for confirmed cleanup.
+- **Safe git pulls.** Pull a single repository from its row in Settings, or update all git sources at once with **Pull all**, with per-repository progress and result feedback.
+- **Per-host settings.** Each Paseo daemon stores its own sources, target directories, and language choice, and all file operations run on the currently selected host.
+- **Cross-platform & bilingual UI.** Works on Desktop, Web, and Mobile in English, Simplified Chinese, or following the system language.
+
+## Screenshots
+
+<p align="center">
+  <img src="assets/skills.png" alt="Skill Hub desktop matrix view showing deployed cells, nested skills, conflict indicator, and batch action bar" width="100%">
+  <br>
+  <sub>Desktop matrix view with nested skills, conflict indicator, and batch selection</sub>
+</p>
 
 <table>
   <tr>
-    <td width="50%"><img src="assets/preview.png" alt="A skill preview showing its description, path, deployment targets and rendered SKILL.md"></td>
-    <td width="50%"><img src="assets/settings.png" alt="Settings with skill sources, target directories and the language setting"></td>
+    <td width="50%"><img src="assets/preview.png" alt="Skill preview modal showing description, source path, deployed targets, and rendered SKILL.md"></td>
+    <td width="50%"><img src="assets/settings.png" alt="Settings view with skill sources, target directories, and display language"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Preview a skill before deploying it</sub></td>
-    <td align="center"><sub>Sources, target directories and language</sub></td>
+    <td align="center"><sub>Preview a skill before deploying</sub></td>
+    <td align="center"><sub>Skill sources, target directories, and language</sub></td>
   </tr>
 </table>
 
 <p align="center">
-  <img src="assets/mobile-skills.png" alt="The matrix on a phone-sized screen" width="32%">
+  <img src="assets/mobile-skills.png" alt="Skill Hub matrix on a phone-sized screen" width="32%">
   &nbsp;&nbsp;
-  <img src="assets/mobile-settings.png" alt="Settings on a phone-sized screen" width="32%">
+  <img src="assets/mobile-settings.png" alt="Skill Hub settings on a phone-sized screen" width="32%">
   <br>
-  <sub>The same screens on a phone</sub>
+  <sub>Responsive layout on mobile</sub>
 </p>
 
 ## Reading the matrix
 
 | Cell | Meaning | Tapping it |
 | --- | --- | --- |
-| ✅ Green check | Deployed: the target has a symlink to this skill | Removes that symlink |
-| ⬜ Empty | Not deployed | Creates the symlink |
-| ⚠️ Warning | Conflict: a folder, file or other link already uses this name | Explains the conflict; nothing is overwritten |
-| 🔗 Broken link | A dangling link uses this name | Asks you to clean up broken links first |
-| 📁 Folder | The original skill folder lives in this target | Nothing; it is not a link |
+| ✅ Green check | **Deployed** — the target holds a symlink to this skill | Removes that symlink |
+| ⬜ Empty | **Not deployed** | Creates the symlink (and creates the target directory if missing) |
+| ⚠️ Warning | **Conflict** — a folder, file, or link to another path already uses this name | Explains the conflict; nothing is overwritten |
+| 🔗 Broken link | **Dangling symlink** uses this name | Prompts you to clean up broken links first |
+| 📁 Folder | **Original source** — the skill folder itself lives inside this target | No-op; never deletes original directories |
 
-A **Duplicate** tag means two sources contain a skill folder with the same name. Both would use the same link name, so only one can be deployed to a target.
+A **Duplicate** tag indicates that two configured sources contain a skill folder with the same directory name. Because both would occupy the same link name in a target directory, only one can be deployed to a given target.
 
 ## Install
 
-**Requirements**
+### Requirements
 
-- Paseo 0.17.4 or newer, on both the daemon and the app.
+- **Paseo ≥ 0.17.4** on both the daemon and the app.
 - Plugins enabled on the daemon: **Settings → Plugins → Enable plugins**.
-- `git` on the daemon host, only if you want to pull git sources.
+- `git` on the daemon host (only required if you use **Pull** / **Pull all** on git sources).
 
-**From GitHub**
+### Install from GitHub (available now)
 
 ```bash
 paseo plugin add github:LucasLan666666/paseo-skill-hub
 ```
 
-Add `--host <host>` to install on a daemon other than your local one. A listing in the Paseo plugin registry is under review; once it is published you can install it from the registry as well.
+Add `--host <host>` to install on a remote Paseo daemon.
+
+> **Official Paseo Plugin Registry status:** Submitted and currently **under review** in [getpaseo/plugins#3344](https://github.com/getpaseo/plugins/pull/3344) (submission issue [#3343](https://github.com/getpaseo/plugins/issues/3343)). Once approved and published, you will also be able to install directly from the Paseo plugin marketplace.
 
 ## Quick start
 
-1. Open **Skill Hub** from the sidebar, or press <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> and type "Skill Hub".
-2. In **Settings → Skill sources**, add a folder that contains skills, for example `~/skills` or a cloned repository.
-3. Back on **Skills**, tap cells to deploy. Start a new agent session to pick up newly deployed skills.
+1. Open **Skill Hub** from the Paseo sidebar, or press <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> and search `"Skill Hub"`.
+2. Go to **Settings → Skill sources** and add a directory containing skills (e.g. `~/skills` or a cloned git repository).
+3. Switch back to **Skills** and tap cells to deploy, or select multiple rows for batch deployment.
+4. Start a new agent session so the agent picks up the newly linked skills.
 
-Need another directory, such as `~/.config/opencode/skills` or `~/.copilot/skills`? Add it under **Settings → Target directories**; the dialog suggests known agent folders.
+## Configuration
+
+Settings are stored per daemon host in Paseo's plugin settings (no extra database or external config file).
+
+### Default & known target directories
+
+| Target directory | Default | Agents known to read it |
+| --- | :---: | --- |
+| `~/.agents/skills` (Shared) | ✓ | Codex, Pi, Oh My Pi, Antigravity |
+| `~/.claude/skills` | ✓ | Claude Code |
+| `~/.config/opencode/skills` | — | OpenCode |
+| `~/.copilot/skills` | — | Copilot |
+| `~/.omp/agent/skills` | — | Oh My Pi |
+| `~/.pi/agent/skills` | — | Pi |
+| `~/.gemini/config/skills` | — | Antigravity |
+
+You can add any absolute path (including `~/…` or Windows paths) under **Settings → Target directories**; the add dialog suggests the directories above.
+
+### Discovery & git behavior
+
+- **Discovery limits:** Recursive walk up to **6 levels** deep (capped at 20,000 directories per scan), skipping hidden directories (`.…`), `node_modules`, and symlinked directories.
+- **Git detection:** Any source located inside a git work tree can be pulled, except repositories rooted at your home directory (`~`) or above (dotfiles repos are ignored).
+- **Display language:** `System` (follows Paseo/OS), `English`, or `简体中文`.
 
 ## Safe by design
 
-- **Never overwrites.** An existing file, folder or foreign link shows as a conflict and is left alone.
-- **Removes only links.** Undeploying deletes the symlink that points at that skill. Source files are never deleted.
-- **Confirmed cleanup.** Broken links are listed first, and cleanup removes only those links.
-- **Stays inside your sources.** Only folders inside a configured source can be linked or previewed, and symlinks inside a source are not followed out of it.
-- **Careful pulls.** Pulling runs `git pull --ff-only`, so it never merges, rebases or discards local changes, and never prompts for credentials. Repositories rooted at your home directory or above are ignored.
-- **Nothing extra.** No database, no service and no network requests other than your own git remotes. Settings live in Paseo's per-host plugin settings.
+- **Never overwrites.** Any existing file, folder, or symlink pointing elsewhere is flagged as a conflict and left untouched.
+- **Removes only its own links.** Undeploying deletes only a symlink verified to point to that skill. Source folders are never modified or deleted.
+- **Confirmed cleanup.** Dangling symlinks are listed for review, and cleanup removes only confirmed broken links directly inside configured target directories.
+- **Confined to configured sources.** Only directories inside a configured source (verified via canonical `realpath`) can be linked or previewed; symlinks inside a source are never followed outside it.
+- **Non-destructive, non-interactive pulls.** Git pulls run `git -c pull.rebase=false pull --ff-only` with `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never`, preserving custom `core.sshCommand` settings (falling back to `ssh -o BatchMode=yes` when unset). It never merges, rebases, discards local edits, or blocks on prompts.
+- **Zero extra runtime or network traffic.** Zero third-party runtime dependencies, no background service, and no network requests other than your own git remotes when you click pull.
 
 ## FAQ
 
@@ -125,28 +172,28 @@ Need another directory, such as `~/.config/opencode/skills` or `~/.copilot/skill
 <summary><b>Claude Code does not see a skill I deployed.</b></summary>
 <br>
 
-Claude Code reads `$CLAUDE_CONFIG_DIR/skills` instead of `~/.claude/skills` when `CLAUDE_CONFIG_DIR` is set, and some provider setups set it. Add that directory as a target. Agents also tend to load skills when a session starts, so open a new session after deploying.
+When `CLAUDE_CONFIG_DIR` is set (common with custom provider setups), Claude Code reads `$CLAUDE_CONFIG_DIR/skills` instead of `~/.claude/skills`. Add that path under **Settings → Target directories**. Also open a new agent session after deploying, since agents typically index skills at session startup.
 </details>
 
 <details>
 <summary><b>An agent lists a skill twice.</b></summary>
 <br>
 
-Some agents read more than one of the target directories. Deploy each skill to only one directory that a given agent reads.
+Some agents read more than one skill directory (for example both `~/.agents/skills` and an agent-specific folder). Deploy each skill to only one directory that a given agent reads.
 </details>
 
 <details>
 <summary><b>How is this different from the Skills plugin?</b></summary>
 <br>
 
-The [Skills plugin](https://github.com/gpambrozio/paseo-plugins) lists and invokes the skills that a running session already has. Skill Hub decides which skills are on disk for every agent. They work well together.
+The [Skills plugin](https://github.com/gpambrozio/paseo-plugins) lists and invokes skills already available to a running session. Skill Hub manages which skills are linked on disk for every agent across your host. They complement each other cleanly.
 </details>
 
 <details>
 <summary><b>Does deploying copy files?</b></summary>
 <br>
 
-No. Deploying creates a directory symlink, or a directory junction on Windows. Editing the source changes what every linked agent sees.
+No. Deploying creates a directory symlink on Linux/macOS or a directory junction on Windows. Editing or pulling the source immediately updates what every linked agent sees.
 </details>
 
 ## Development
@@ -157,15 +204,15 @@ cd paseo-skill-hub
 npm install
 npm run typecheck && npm test
 paseo plugin install "$PWD"
-paseo plugin reload skill-hub   # after changing the source
+paseo plugin reload skill-hub   # after changing source files
 ```
 
 | Path | Contents |
 | --- | --- |
-| `index.client.tsx`, `client/` | Screen, matrix, preview and settings (React Native) |
-| `index.server.ts`, `server/` | Discovery, linking and git pulls, running in the daemon |
-| `shared/` | Settings schema and RPC contracts |
-| `tests/` | Node test runner tests against real temporary directories |
+| `index.client.tsx`, `client/` | React Native screen, matrix view, preview modal, settings, and i18n |
+| `index.server.ts`, `server/` | Skill discovery, symlink management, frontmatter parsing, and git pulls |
+| `shared/` | Host-scoped settings schema (`v2` with `v1` migration) and RPC contracts |
+| `tests/` | Node test runner suite running against real temporary directories |
 
 ## Acknowledgements
 
