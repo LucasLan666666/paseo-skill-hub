@@ -2,12 +2,12 @@ import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 
 /**
- * Deployment state of one skill for one agent, read from the file system:
- * - linked: `<agent dir>/<skill dir name>` is a symlink to this skill
+ * Deployment state of one skill in one target directory, read from the file system:
+ * - linked: `<target dir>/<skill dir name>` is a symlink to this skill
  * - none: nothing exists at that path
  * - conflict: a directory, file, or link to somewhere else occupies the path
  * - broken: a symlink whose target no longer exists occupies the path
- * - source: the path is the skill itself (the agent dir contains the original)
+ * - source: the path is the skill itself (the target dir contains the original)
  */
 export const cellStateSchema = z.enum(["linked", "none", "conflict", "broken", "source"]);
 export type CellState = z.infer<typeof cellStateSchema>;
@@ -24,7 +24,7 @@ export type Cell = z.infer<typeof cellSchema>;
 const skillSchema = z.object({
   /** Absolute skill directory; also the skill's identity. */
   path: z.string(),
-  /** Directory name, used as the link name inside agent directories. */
+  /** Directory name, used as the link name inside target directories. */
   dirName: z.string(),
   name: z.string(),
   description: z.string(),
@@ -36,35 +36,35 @@ const skillSchema = z.object({
   depth: z.number(),
   /** Another discovered skill uses the same directory name. */
   duplicate: z.boolean(),
-  /** Keyed by agent id, enabled agents only. */
+  /** Keyed by target id. */
   cells: z.record(z.string(), cellSchema),
 });
 export type Skill = z.infer<typeof skillSchema>;
 
-const agentStatusSchema = z.object({
+const targetStatusSchema = z.object({
   id: z.string(),
   name: z.string(),
   path: z.string(),
+  /** Expanded absolute path; null when the configured path is not absolute. */
   dir: z.string().nullable(),
   exists: z.boolean(),
-  enabled: z.boolean(),
-  builtin: z.boolean(),
-  defaultPath: z.string().optional(),
 });
-export type AgentStatus = z.infer<typeof agentStatusSchema>;
+export type TargetStatus = z.infer<typeof targetStatusSchema>;
 
 const sourceStatusSchema = z.object({
   path: z.string(),
   dir: z.string().nullable(),
   exists: z.boolean(),
   count: z.number(),
-  /** Current branch when the source is inside a git work tree; null otherwise. */
+  /** Root of the git work tree containing the source; null when it is not in one. */
+  gitRoot: z.string().nullable(),
+  /** Current branch of that work tree; null when the source is not in one. */
   gitBranch: z.string().nullable(),
 });
 export type SourceStatus = z.infer<typeof sourceStatusSchema>;
 
 const brokenLinkSchema = z.object({
-  agentId: z.string(),
+  targetId: z.string(),
   path: z.string(),
   target: z.string(),
 });
@@ -72,7 +72,7 @@ export type BrokenLink = z.infer<typeof brokenLinkSchema>;
 
 const scanResultSchema = z.object({
   sources: z.array(sourceStatusSchema),
-  agents: z.array(agentStatusSchema),
+  targets: z.array(targetStatusSchema),
   skills: z.array(skillSchema),
   broken: z.array(brokenLinkSchema),
   truncated: z.boolean(),
@@ -88,7 +88,7 @@ export const scanRpc = defineRpc({
 const opSchema = z.object({
   action: z.enum(["deploy", "undeploy"]),
   skill: z.string(),
-  agentId: z.string(),
+  targetId: z.string(),
 });
 export type LinkOp = z.infer<typeof opSchema>;
 
@@ -101,8 +101,8 @@ export const MAX_BATCH = 1000;
  */
 export const ERROR_CODES = [
   "E_CONFIG",
-  "E_AGENT",
-  "E_AGENT_PATH",
+  "E_TARGET",
+  "E_TARGET_PATH",
   "E_SKILL_PATH",
   "E_SKILL_MISSING",
   "E_OUTSIDE",
@@ -110,7 +110,7 @@ export const ERROR_CODES = [
   "E_OCCUPIED",
   "E_BROKEN",
   "E_SOURCE",
-  "E_NOT_AGENT_DIR",
+  "E_NOT_TARGET_DIR",
   "E_NOT_BROKEN",
   "E_NOT_SOURCE",
   "E_NOT_GIT",

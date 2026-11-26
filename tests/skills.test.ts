@@ -5,12 +5,14 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import type { HubConfig } from "../shared/config";
-import { resolveAgents } from "../shared/config";
+import { configSettings, DEFAULT_TARGETS } from "../shared/config";
 import { parseSkillDoc } from "../server/frontmatter";
 import { apply, expandPath, prune, pull, readSkill, scan } from "../server/skills";
-import { gitBranch } from "../server/git";
+import { gitInfo } from "../server/git";
 import { ERROR_CODES } from "../shared/contracts";
 import { localizeError, type MessageKey, translator } from "../client/i18n";
+import { targetLabel } from "../client/targets";
+import { pullStatus, pullSummary } from "../client/pull";
 
 let home: string;
 
@@ -22,15 +24,9 @@ async function skill(dir: string, header = "") {
 function config(extra: Partial<HubConfig> = {}): HubConfig {
   return {
     sources: ["~/src"],
-    agents: [
-      { id: "claude", name: "Claude Code", path: "~/agents/claude", enabled: true },
-      { id: "codex", name: "Codex", path: "~/agents/codex", enabled: true },
-      ...["copilot", "opencode", "pi", "omp", "antigravity", "muse"].map((id) => ({
-        id,
-        name: id,
-        path: `~/.${id}`,
-        enabled: false,
-      })),
+    targets: [
+      { id: "claude", name: "Claude Code", path: "~/agents/claude" },
+      { id: "codex", name: "", path: "~/agents/codex" },
     ],
     language: "system",
     ...extra,
@@ -68,24 +64,51 @@ describe("frontmatter", () => {
   });
 });
 
-describe("paths and agents", () => {
+describe("paths and targets", () => {
   test("expands ~ and rejects relative paths", () => {
     assert.equal(expandPath("~/x/", "/home/u"), "/home/u/x");
     assert.equal(expandPath("~", "/home/u"), "/home/u");
     assert.equal(expandPath("rel/path", "/home/u"), null);
   });
 
-  test("merges built-in overrides and custom agents", () => {
-    const agents = resolveAgents([
-      { id: "codex", name: "Codex", path: "~/custom", enabled: false },
-      { id: "mine", name: "Mine", path: "~/mine", enabled: true },
-    ]);
-    const codex = agents.find((a) => a.id === "codex")!;
-    assert.equal(codex.path, "~/custom");
-    assert.equal(codex.enabled, false);
-    assert.equal(codex.defaultPath, "~/.agents/skills");
-    assert.equal(agents.find((a) => a.id === "claude")!.path, "~/.claude/skills");
-    assert.equal(agents.at(-1)!.id, "mine");
+  test("defaults to the shared and Claude directories and migrates version 1", () => {
+    assert.deepEqual(configSettings.schema.parse({}).targets, DEFAULT_TARGETS);
+    const migrated = configSettings.schema.parse(
+      configSettings.migrate!(
+        {
+          sources: ["~/x"],
+          language: "en",
+          agents: [
+            { id: "codex", name: "Codex", path: "~/.agents/skills", enabled: true },
+            { id: "custom-1", name: "Mine", path: "~/mine", enabled: true },
+            { id: "custom-2", name: "Off", path: "~/off", enabled: false },
+          ],
+        },
+        1,
+      ),
+    );
+    assert.deepEqual(migrated, {
+      sources: ["~/x"],
+      language: "en",
+      targets: [
+        ...DEFAULT_TARGETS,
+        { id: "copilot", name: "", path: "~/.copilot/skills" },
+        { id: "opencode", name: "", path: "~/.config/opencode/skills" },
+        { id: "pi", name: "", path: "~/.pi/agent/skills" },
+        { id: "omp", name: "", path: "~/.omp/agent/skills" },
+        { id: "antigravity", name: "", path: "~/.gemini/config/skills" },
+        { id: "muse", name: "", path: "~/.config/muse/skills" },
+        { id: "custom-1", name: "Mine", path: "~/mine" },
+      ],
+    });
+  });
+
+  test("labels targets by name, known directory, or folder", () => {
+    const zh = translator("zh-CN");
+    assert.equal(targetLabel(zh, { name: "", path: "~/.agents/skills/" }), "通用");
+    assert.equal(targetLabel(zh, { name: "", path: "~/.claude/skills" }), "Claude Code");
+    assert.equal(targetLabel(zh, { name: "", path: "~/.foo/skills" }), ".foo");
+    assert.equal(targetLabel(zh, { name: "Mine", path: "~/.foo/skills" }), "Mine");
   });
 });
 
@@ -99,7 +122,7 @@ describe("scan and link", () => {
     assert.equal(result.skills[0].description, "Folded text");
     assert.ok(result.skills.filter((s) => s.dirName === "beta").every((s) => s.duplicate));
     assert.deepEqual(result.sources, [
-      { path: "~/src", dir: join(home, "src"), exists: true, count: 3, gitBranch: null },
+      { path: "~/src", dir: join(home, "src"), exists: true, count: 3, gitRoot: null, gitBranch: null },
     ]);
     assert.deepEqual(Object.keys(result.skills[0].cells).sort(), ["claude", "codex"]);
     assert.ok(result.skills.every((s) => s.cells.claude.state === "none"));
@@ -110,8 +133,8 @@ describe("scan and link", () => {
     const { results } = await apply(
       config(),
       [
-        { action: "deploy", skill: alpha, agentId: "claude" },
-        { action: "deploy", skill: alpha, agentId: "codex" },
+        { action: "deploy", skill: alpha, targetId: "claude" },
+        { action: "deploy", skill: alpha, targetId: "codex" },
       ],
       home,
     );
@@ -140,33 +163,33 @@ describe("scan and link", () => {
   test("never overwrites an existing directory", async () => {
     await mkdir(join(home, "agents/codex/beta"));
     const beta = join(home, "src/repo-a/beta");
-    const { results } = await apply(config(), [{ action: "deploy", skill: beta, agentId: "codex" }], home);
+    const { results } = await apply(config(), [{ action: "deploy", skill: beta, targetId: "codex" }], home);
     assert.equal(results[0].error, "E_OCCUPIED");
     assert.ok((await lstat(join(home, "agents/codex/beta"))).isDirectory());
-    const { results: undo } = await apply(config(), [{ action: "undeploy", skill: beta, agentId: "codex" }], home);
+    const { results: undo } = await apply(config(), [{ action: "undeploy", skill: beta, targetId: "codex" }], home);
     assert.equal(undo[0].ok, false);
     assert.ok((await lstat(join(home, "agents/codex/beta"))).isDirectory());
   });
 
   test("undeploy removes only the link, not the source", async () => {
     const alpha = join(home, "src/repo-a/alpha");
-    const { results } = await apply(config(), [{ action: "undeploy", skill: alpha, agentId: "codex" }], home);
+    const { results } = await apply(config(), [{ action: "undeploy", skill: alpha, targetId: "codex" }], home);
     assert.ok(results[0].ok);
     await assert.rejects(lstat(join(home, "agents/codex/alpha")));
     assert.ok((await lstat(join(alpha, "SKILL.md"))).isFile());
   });
 
-  test("rejects skills outside configured sources and disabled agents", async () => {
+  test("rejects skills outside configured sources and unknown targets", async () => {
     await skill(join(home, "elsewhere/x"));
     const { results } = await apply(
       config(),
       [
-        { action: "deploy", skill: join(home, "elsewhere/x"), agentId: "claude" },
-        { action: "deploy", skill: join(home, "src/repo-a/alpha"), agentId: "pi" },
+        { action: "deploy", skill: join(home, "elsewhere/x"), targetId: "claude" },
+        { action: "deploy", skill: join(home, "src/repo-a/alpha"), targetId: "pi" },
       ],
       home,
     );
-    assert.deepEqual(results.map((r) => r.error), ["E_OUTSIDE", "E_AGENT"]);
+    assert.deepEqual(results.map((r) => r.error), ["E_OUTSIDE", "E_TARGET"]);
     await assert.rejects(readSkill(config(), join(home, "elsewhere/x"), home));
   });
 
@@ -178,7 +201,7 @@ describe("scan and link", () => {
     const result = await scan(config(), home);
     assert.ok(!result.skills.some((s) => s.path.includes("linked-")));
     const escape = join(home, "src/linked-dir/escape");
-    const { results } = await apply(config(), [{ action: "deploy", skill: escape, agentId: "claude" }], home);
+    const { results } = await apply(config(), [{ action: "deploy", skill: escape, targetId: "claude" }], home);
     assert.equal(results[0].ok, false);
     await assert.rejects(readSkill(config(), escape, home));
     await assert.rejects(readSkill(config(), join(home, "src/linked-doc"), home));
@@ -188,7 +211,7 @@ describe("scan and link", () => {
     await symlink(join(home, "src/gone"), join(home, "agents/claude/gone"));
     const result = await scan(config(), home);
     assert.deepEqual(result.broken, [
-      { agentId: "claude", path: join(home, "agents/claude/gone"), target: join(home, "src/gone") },
+      { targetId: "claude", path: join(home, "agents/claude/gone"), target: join(home, "src/gone") },
     ]);
     const outcome = await prune(
       config(),
@@ -196,7 +219,7 @@ describe("scan and link", () => {
       home,
     );
     assert.equal(outcome.removed, 1);
-    assert.deepEqual(outcome.errors.map((e) => e.error), ["E_NOT_BROKEN", "E_NOT_AGENT_DIR"]);
+    assert.deepEqual(outcome.errors.map((e) => e.error), ["E_NOT_BROKEN", "E_NOT_TARGET_DIR"]);
     assert.ok((await lstat(join(home, "agents/claude/alpha"))).isSymbolicLink());
     assert.ok((await lstat(join(home, "src/repo-a/beta"))).isDirectory());
   });
@@ -232,7 +255,7 @@ describe("scan and link", () => {
     assert.equal(result.sources[0].count, 5);
 
     const child = join(home, "nest/top/child-b");
-    const { results } = await apply(cfg, [{ action: "deploy", skill: child, agentId: "codex" }], home);
+    const { results } = await apply(cfg, [{ action: "deploy", skill: child, targetId: "codex" }], home);
     assert.ok(results[0].ok, JSON.stringify(results));
     assert.equal(await readlink(join(home, "agents/codex/child-b")), child);
     const states = Object.fromEntries((await scan(cfg, home)).skills.map((s) => [s.dirName, s.cells.codex.state]));
@@ -262,8 +285,9 @@ describe("git sources", () => {
     const cfg = config({ sources: ["~/git/clone/skills", "~/src"] });
     const before = await scan(cfg, home);
     assert.equal(before.sources[0].gitBranch, "main");
-    assert.equal(before.sources[1].gitBranch, null);
-    assert.equal(await gitBranch(clone, clone), null);
+    assert.equal(before.sources[0].gitRoot, clone);
+    assert.equal(before.sources[1].gitRoot, null);
+    assert.equal(await gitInfo(clone, clone), null);
 
     await skill(join(writer, "skills/second"));
     sh("git add . && git -c user.email=t@t -c user.name=t commit -qm two && git push -q origin HEAD:main", writer);
@@ -290,5 +314,26 @@ describe("i18n", () => {
   test("every server error code has a message", () => {
     const en = translator("en");
     for (const code of ERROR_CODES) assert.notEqual(en(`error.${code}` as MessageKey), `error.${code}`);
+  });
+});
+
+describe("pull feedback", () => {
+  const zh = translator("zh-CN");
+  const ok = (source: string, changed: boolean) => ({ source, ok: true, changed, message: "" });
+
+  test("summarizes a pull-all", () => {
+    assert.deepEqual(pullSummary(zh, [ok("~/a", true), ok("~/b", false)]), { error: false, text: "已更新 1 个仓库" });
+    assert.deepEqual(pullSummary(zh, [ok("~/a", false)]), { error: false, text: "已是最新" });
+    assert.deepEqual(
+      pullSummary(zh, [ok("~/a", true), { source: "~/b", ok: false, changed: false, message: "E_NOT_GIT" }]),
+      { error: true, text: "1 个仓库拉取失败。~/b：不是 Git 仓库" },
+    );
+  });
+
+  test("describes one row", () => {
+    assert.equal(pullStatus(zh, true, undefined), "拉取中…");
+    assert.equal(pullStatus(zh, false, ok("~/a", true)), "已更新");
+    assert.equal(pullStatus(zh, false, ok("~/a", false)), "已是最新");
+    assert.equal(pullStatus(zh, false, { source: "~/a", ok: false, changed: false, message: "x" }), null);
   });
 });

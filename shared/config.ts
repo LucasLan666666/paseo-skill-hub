@@ -1,76 +1,92 @@
 import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
 
-const agentEntrySchema = z.object({
+const targetSchema = z.object({
   id: z.string().min(1),
-  name: z.string().min(1),
+  /** Optional display name; known directories get a built-in label when empty. */
+  name: z.string().default(""),
   path: z.string(),
-  enabled: z.boolean().default(true),
 });
+export type Target = z.infer<typeof targetSchema>;
 
 /**
- * Host-scoped document: every daemon keeps its own sources and agents.
- * `agents` holds overrides for built-in agents (matched by id) plus custom agents.
+ * Most agents read the shared `~/.agents/skills`; Claude Code reads only `~/.claude/skills`.
+ * Two targets therefore cover Claude Code, Codex, Pi, Oh My Pi and Antigravity.
+ */
+export const DEFAULT_TARGETS: Target[] = [
+  { id: "shared", name: "", path: "~/.agents/skills" },
+  { id: "claude", name: "", path: "~/.claude/skills" },
+];
+
+/** Built-in agents of settings version 1 and their default directories. */
+const V1_AGENT_DIRS: Record<string, string> = {
+  claude: "~/.claude/skills",
+  codex: "~/.agents/skills",
+  copilot: "~/.copilot/skills",
+  opencode: "~/.config/opencode/skills",
+  pi: "~/.pi/agent/skills",
+  omp: "~/.omp/agent/skills",
+  antigravity: "~/.gemini/config/skills",
+  muse: "~/.config/muse/skills",
+};
+
+/**
+ * Host-scoped document: every daemon keeps its own sources and target directories.
  */
 export const configSettings = defineSettings({
   id: "config",
   scope: "host",
-  version: 1,
+  version: 2,
   schema: z.object({
     sources: z.array(z.string()).default([]),
-    agents: z.array(agentEntrySchema).default([]),
+    targets: z.array(targetSchema).default(DEFAULT_TARGETS),
     language: z.enum(["system", "en", "zh-CN"]).default("system"),
   }),
+  // Version 1 listed agents. Every directory that was visible in its matrix becomes a target, so
+  // links already deployed there stay visible; agents that were switched off are dropped.
+  migrate(values) {
+    const old = (values ?? {}) as {
+      sources?: unknown;
+      language?: unknown;
+      agents?: { id?: string; name?: string; path?: string; enabled?: boolean }[];
+    };
+    const stored = old.agents ?? [];
+    const visible: Target[] = [];
+    for (const [id, path] of Object.entries(V1_AGENT_DIRS)) {
+      const entry = stored.find((a) => a.id === id);
+      if (entry?.enabled !== false) visible.push({ id, name: "", path: entry?.path?.trim() || path });
+    }
+    for (const a of stored) {
+      if (a.id && !(a.id in V1_AGENT_DIRS) && a.path && a.enabled !== false) {
+        visible.push({ id: a.id, name: a.name ?? "", path: a.path });
+      }
+    }
+    const targets = [...DEFAULT_TARGETS];
+    for (const target of visible) if (!targets.some((t) => t.path === target.path)) targets.push(target);
+    return { sources: old.sources, language: old.language, targets };
+  },
 });
 
-export type AgentEntry = z.infer<typeof agentEntrySchema>;
 export type HubConfig = z.infer<typeof configSettings.schema>;
 export type LanguageChoice = HubConfig["language"];
 
-/** User-level skills directories of the agents Paseo ships providers for. */
-export const BUILTIN_AGENTS: readonly { id: string; name: string; short: string; path: string }[] = [
-  { id: "claude", name: "Claude Code", short: "Claude", path: "~/.claude/skills" },
-  { id: "codex", name: "Codex", short: "Codex", path: "~/.agents/skills" },
-  { id: "copilot", name: "Copilot", short: "Copilot", path: "~/.copilot/skills" },
-  { id: "opencode", name: "OpenCode", short: "OpenCode", path: "~/.config/opencode/skills" },
-  { id: "pi", name: "Pi", short: "Pi", path: "~/.pi/agent/skills" },
-  { id: "omp", name: "Oh My Pi", short: "OMP", path: "~/.omp/agent/skills" },
-  { id: "antigravity", name: "Antigravity", short: "Agy", path: "~/.gemini/config/skills" },
-  { id: "muse", name: "Muse Code", short: "Muse", path: "~/.config/muse/skills" },
+/**
+ * User-level skills directories and the agents known to read them, checked against each agent's
+ * code. `name` is empty for the shared directory, whose label is translated by the client.
+ */
+export const KNOWN_DIRS: readonly { path: string; name: string; readers: string }[] = [
+  { path: "~/.agents/skills", name: "", readers: "Codex, Pi, Oh My Pi, Antigravity" },
+  { path: "~/.claude/skills", name: "Claude Code", readers: "Claude Code" },
+  { path: "~/.config/opencode/skills", name: "OpenCode", readers: "OpenCode" },
+  { path: "~/.copilot/skills", name: "Copilot", readers: "Copilot" },
+  { path: "~/.omp/agent/skills", name: "Oh My Pi", readers: "Oh My Pi" },
+  { path: "~/.pi/agent/skills", name: "Pi", readers: "Pi" },
+  { path: "~/.gemini/config/skills", name: "Antigravity", readers: "Antigravity" },
 ];
 
-/** Compact column label for the matrix header. */
-export function shortName(agent: { id: string; name: string }): string {
-  return BUILTIN_AGENTS.find((b) => b.id === agent.id)?.short ?? agent.name;
-}
-
-export interface ResolvedAgent {
-  id: string;
-  name: string;
-  path: string;
-  enabled: boolean;
-  builtin: boolean;
-  /** Built-in default path; absent for custom agents. */
-  defaultPath?: string;
-}
-
-export function resolveAgents(stored: readonly AgentEntry[]): ResolvedAgent[] {
-  const byId = new Map(stored.map((entry) => [entry.id, entry]));
-  const builtins = BUILTIN_AGENTS.map((agent) => {
-    const override = byId.get(agent.id);
-    return {
-      id: agent.id,
-      name: agent.name,
-      path: override?.path.trim() || agent.path,
-      enabled: override?.enabled ?? true,
-      builtin: true,
-      defaultPath: agent.path,
-    };
-  });
-  const custom = stored
-    .filter((entry) => !BUILTIN_AGENTS.some((agent) => agent.id === entry.id))
-    .map((entry) => ({ ...entry, builtin: false }));
-  return [...builtins, ...custom];
+export function knownDir(path: string) {
+  const normalized = path.trim().replace(/[\\/]+$/, "");
+  return KNOWN_DIRS.find((dir) => dir.path === normalized);
 }
 
 /** Accepts `~`, `~/…`, POSIX absolute and Windows absolute paths. */

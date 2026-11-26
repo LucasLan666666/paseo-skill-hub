@@ -27,10 +27,10 @@ function git(args: string[], cwd: string, timeout: number): Promise<string> {
 }
 
 /**
- * Branch of the work tree containing `dir`, or null when it is not in one. Repositories rooted
- * at the home directory or above (dotfiles repos) are ignored so pulling never touches them.
+ * Root and branch of the work tree containing `dir`, or null when it is not in one. Repositories
+ * rooted at the home directory or above (dotfiles repos) are ignored so pulling never touches them.
  */
-export async function gitBranch(dir: string, home: string): Promise<string | null> {
+export async function gitInfo(dir: string, home: string): Promise<{ root: string; branch: string } | null> {
   try {
     const [root, branch] = (await git(["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"], dir, 5000))
       .trim()
@@ -38,7 +38,7 @@ export async function gitBranch(dir: string, home: string): Promise<string | nul
     const top = resolve(root);
     const homeDir = resolve(home);
     if (top === homeDir || homeDir.startsWith(top.endsWith(sep) ? top : top + sep)) return null;
-    return branch || "HEAD";
+    return { root: top, branch: branch || "HEAD" };
   } catch {
     return null;
   }

@@ -1,4 +1,3 @@
-import { useRpc } from "@getpaseo/plugin/client";
 import {
   Loading,
   SettingsCard,
@@ -7,56 +6,50 @@ import {
   SettingsSelect,
   useToast,
 } from "@getpaseo/plugin/client/ui";
-import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import {
   type HubConfig,
+  KNOWN_DIRS,
   type LanguageChoice,
   looksAbsolute,
-  type ResolvedAgent,
-  resolveAgents,
+  type Target,
 } from "../shared/config";
-import { type AgentStatus, pullRpc, type SourceStatus } from "../shared/contracts";
-import { SCAN_KEY, useHub } from "./data";
+import type { SourceStatus, TargetStatus } from "../shared/contracts";
+import { useHub } from "./data";
 import { LANGUAGE_NAMES, localizeError, type Translate } from "./i18n";
-import { Banner, Button, Field, IconButton, Sheet, Switch, useKit } from "./kit";
+import { Banner, Button, Chip, Field, IconButton, Sheet, useKit } from "./kit";
+import { pullStatus, pullSummary, usePull } from "./pull";
+import { targetLabel, targetReaders } from "./targets";
 
-type Editing = { kind: "source" } | { kind: "agent"; agent: ResolvedAgent | null };
+type Editing = { kind: "source" } | { kind: "target"; target: Target | null };
 
-function withAgent(values: HubConfig, agent: ResolvedAgent): HubConfig {
-  const entry = { id: agent.id, name: agent.name, path: agent.path, enabled: agent.enabled };
-  const isDefault = agent.builtin && agent.path === agent.defaultPath && agent.enabled;
-  const index = values.agents.findIndex((a) => a.id === agent.id);
-  const agents = values.agents.filter((a) => a.id !== agent.id);
-  if (!isDefault) agents.splice(index < 0 ? agents.length : index, 0, entry);
-  return { ...values, agents };
+const samePath = (a: string, b: string) => a.trim().replace(/[\\/]+$/, "") === b.trim().replace(/[\\/]+$/, "");
+
+function sourceHint(t: Translate, source: SourceStatus | undefined, status: string | null): string | undefined {
+  if (!source?.exists) return undefined;
+  const base =
+    source.gitBranch !== null
+      ? t("settings.gitHint", { branch: source.gitBranch, count: source.count })
+      : t("settings.skillCount", { count: source.count });
+  return status ? `${base} · ${status}` : base;
 }
 
-function agentHint(t: Translate, agent: ResolvedAgent, status: AgentStatus | undefined): string {
-  const notes: string[] = [];
-  if (agent.builtin && agent.path !== agent.defaultPath) notes.push(t("settings.modified"));
-  if (!agent.builtin) notes.push(t("settings.custom"));
+function targetHint(t: Translate, target: Target, status: TargetStatus | undefined): string {
+  const notes = [target.path];
+  const readers = targetReaders(target.path);
+  if (readers) notes.push(t("settings.readers", { readers }));
   if (status && !status.dir) notes.push(t("settings.notAbsolute"));
   else if (status && !status.exists) notes.push(t("settings.notCreated"));
-  return notes.length > 0 ? `${agent.path} · ${notes.join(" · ")}` : agent.path;
-}
-
-function sourceHint(t: Translate, source: SourceStatus | undefined): string | undefined {
-  if (!source?.exists) return undefined;
-  return source.gitBranch !== null
-    ? t("settings.gitHint", { branch: source.gitBranch, count: source.count })
-    : t("settings.skillCount", { count: source.count });
+  return notes.join(" · ");
 }
 
 export function SettingsPage() {
   const { colors, t } = useKit();
   const toast = useToast();
-  const queryClient = useQueryClient();
-  const pullSources = useRpc(pullRpc);
   const { settings, scan } = useHub();
+  const git = usePull(scan.data?.sources ?? []);
   const [editing, setEditing] = useState<Editing | null>(null);
-  const [pulling, setPulling] = useState<string | null>(null);
 
   if (settings.status === "loading") return <Loading />;
   if (settings.status === "error") {
@@ -81,7 +74,6 @@ export function SettingsPage() {
   }
 
   const values = settings.values;
-  const agents = resolveAgents(values.agents);
   const status = scan.data;
 
   async function save(next: HubConfig): Promise<boolean> {
@@ -94,20 +86,17 @@ export function SettingsPage() {
     return ok;
   }
 
-  async function pull(path: string) {
-    setPulling(path);
-    try {
-      const [result] = (await pullSources({ sources: [path] })).results;
-      if (!result?.ok) toast.error(localizeError(t, result?.message ?? ""));
-      else toast.show(result.changed ? result.message || t("pull.updated", { count: 1 }) : t("pull.upToDate"), {
-        variant: "success",
-      });
-    } catch (error) {
-      toast.error(localizeError(t, error));
-    } finally {
-      setPulling(null);
-      await queryClient.invalidateQueries({ queryKey: SCAN_KEY });
-    }
+  function saveTarget(target: Target) {
+    const index = values.targets.findIndex((item) => item.id === target.id);
+    const targets =
+      index < 0 ? [...values.targets, target] : values.targets.map((item) => (item.id === target.id ? target : item));
+    return save({ ...values, targets });
+  }
+
+  async function pullAll() {
+    const summary = pullSummary(t, await git.pullAll());
+    if (summary.error) toast.error(summary.text);
+    else toast.show(summary.text, { variant: "success" });
   }
 
   const languageOptions: { label: string; value: LanguageChoice }[] = [
@@ -120,7 +109,19 @@ export function SettingsPage() {
     <View style={{ gap: 24 }}>
       <SettingsSection
         title={t("settings.sources")}
-        trailing={<Button icon="Plus" label={t("common.add")} onPress={() => setEditing({ kind: "source" })} />}
+        trailing={
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {git.gitSources.length > 0 ? (
+              <Button
+                icon="Download"
+                label={git.anyPulling ? t("pull.pending") : t("pull.all")}
+                disabled={git.allPulling}
+                onPress={() => void pullAll()}
+              />
+            ) : null}
+            <Button icon="Plus" label={t("common.add")} onPress={() => setEditing({ kind: "source" })} />
+          </View>
+        }
       >
         <SettingsCard>
           {values.sources.length === 0 ? (
@@ -128,26 +129,30 @@ export function SettingsPage() {
           ) : (
             values.sources.map((path) => {
               const source = status?.sources.find((s) => s.path === path);
+              const pulling = source ? git.isPulling(source) : false;
+              const result = source ? git.resultFor(source) : undefined;
               return (
                 <SettingsRow
                   key={path}
                   label={path}
-                  hint={sourceHint(t, source)}
+                  hint={sourceHint(t, source, pullStatus(t, pulling, result))}
                   error={
                     source && !source.dir
                       ? t("settings.notAbsolute")
                       : source && !source.exists
                         ? t("settings.notFound")
-                        : null
+                        : result && !result.ok
+                          ? localizeError(t, result.message)
+                          : null
                   }
                 >
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
-                    {source?.gitBranch != null ? (
+                    {source?.gitRoot != null ? (
                       <IconButton
-                        icon="Download"
+                        icon={pulling ? "LoaderCircle" : "Download"}
                         label={t("settings.pull", { path })}
-                        disabled={pulling !== null}
-                        onPress={() => void pull(path)}
+                        disabled={pulling}
+                        onPress={() => void git.pull(source)}
                       />
                     ) : null}
                     <IconButton
@@ -165,39 +170,41 @@ export function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection
-        title={t("settings.agents")}
+        title={t("settings.targets")}
         trailing={
           <Button
             icon="Plus"
-            label={t("settings.customAgent")}
-            onPress={() => setEditing({ kind: "agent", agent: null })}
+            label={t("settings.addTarget")}
+            onPress={() => setEditing({ kind: "target", target: null })}
           />
         }
       >
         <SettingsCard>
-          {agents.map((agent) => (
+          {values.targets.map((target) => (
             <SettingsRow
-              key={agent.id}
-              label={agent.name}
-              hint={agentHint(t, agent, status?.agents.find((a) => a.id === agent.id))}
+              key={target.id}
+              label={targetLabel(t, target)}
+              hint={targetHint(t, target, status?.targets.find((s) => s.id === target.id))}
             >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
                 <IconButton
                   icon="Pencil"
-                  label={t("settings.edit", { name: agent.name })}
-                  onPress={() => setEditing({ kind: "agent", agent })}
+                  label={t("settings.edit", { name: targetLabel(t, target) })}
+                  onPress={() => setEditing({ kind: "target", target })}
                 />
-                <Switch
-                  value={agent.enabled}
-                  label={t("settings.showInMatrix", { name: agent.name })}
+                <IconButton
+                  icon="Trash2"
+                  label={t("settings.remove", { path: target.path })}
                   disabled={settings.saving}
-                  onChange={(enabled) => void save(withAgent(values, { ...agent, enabled }))}
+                  onPress={() =>
+                    void save({ ...values, targets: values.targets.filter((item) => item.id !== target.id) })
+                  }
                 />
               </View>
             </SettingsRow>
           ))}
         </SettingsCard>
-        <Text style={{ color: colors.foregroundMuted, fontSize: 12, marginTop: 8 }}>{t("settings.agentsNote")}</Text>
+        <Text style={{ color: colors.foregroundMuted, fontSize: 12, marginTop: 8 }}>{t("settings.targetsNote")}</Text>
       </SettingsSection>
 
       <SettingsSection title={t("settings.language")}>
@@ -219,12 +226,12 @@ export function SettingsPage() {
           onSave={(path) => save({ ...values, sources: [...values.sources, path] })}
         />
       ) : null}
-      {editing?.kind === "agent" ? (
-        <AgentDialog
-          agent={editing.agent}
+      {editing?.kind === "target" ? (
+        <TargetDialog
+          target={editing.target}
+          targets={values.targets}
           onClose={() => setEditing(null)}
-          onSave={(agent) => save(withAgent(values, agent))}
-          onDelete={(agent) => save({ ...values, agents: values.agents.filter((a) => a.id !== agent.id) })}
+          onSave={saveTarget}
         />
       ) : null}
     </View>
@@ -288,102 +295,81 @@ function SourceDialog({
   );
 }
 
-function AgentDialog({
-  agent,
+function TargetDialog({
+  target,
+  targets,
   onClose,
   onSave,
-  onDelete,
 }: {
-  agent: ResolvedAgent | null;
+  target: Target | null;
+  targets: readonly Target[];
   onClose(): void;
-  onSave(agent: ResolvedAgent): Promise<boolean>;
-  onDelete(agent: ResolvedAgent): Promise<boolean>;
+  onSave(target: Target): Promise<boolean>;
 }) {
   const { colors, compact, t } = useKit();
-  const [name, setName] = useState(agent?.name ?? "");
-  const [path, setPath] = useState(agent?.path ?? "");
+  const [name, setName] = useState(target?.name ?? "");
+  const [path, setPath] = useState(target?.path ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const builtin = agent?.builtin ?? false;
+  const others = targets.filter((item) => item.id !== target?.id);
+  const suggestions = KNOWN_DIRS.filter((dir) => !others.some((item) => samePath(item.path, dir.path)));
 
-  async function finish(action: Promise<boolean>) {
+  async function submit() {
+    const nextPath = path.trim();
+    if (!looksAbsolute(nextPath)) return setError(t("dialog.needAbsolute"));
+    if (others.some((item) => samePath(item.path, nextPath))) return setError(t("dialog.duplicateTarget"));
     setBusy(true);
-    const ok = await action;
+    const ok = await onSave({
+      id: target?.id ?? `t-${Date.now().toString(36)}`,
+      name: name.trim(),
+      path: nextPath,
+    });
     setBusy(false);
     if (ok) onClose();
   }
 
-  function submit() {
-    const nextName = name.trim();
-    const nextPath = path.trim();
-    if (!nextName) return setError(t("dialog.needName"));
-    if (!looksAbsolute(nextPath)) return setError(t("dialog.needAbsolute"));
-    void finish(
-      onSave(
-        agent
-          ? { ...agent, name: builtin ? agent.name : nextName, path: nextPath }
-          : {
-              id: `custom-${Date.now().toString(36)}`,
-              name: nextName,
-              path: nextPath,
-              enabled: true,
-              builtin: false,
-            },
-      ),
-    );
-  }
-
   return (
     <Sheet
-      title={agent ? t("dialog.editAgent", { name: agent.name }) : t("dialog.addAgent")}
+      title={target ? t("dialog.editTarget", { name: targetLabel(t, target) }) : t("dialog.addTarget")}
       open
       onClose={onClose}
     >
-      {builtin ? null : (
-        <>
-          <FormLabel text={t("dialog.name")} />
-          <Field
-            value={name}
-            onChangeText={(text) => {
-              setName(text);
-              setError(null);
-            }}
-            placeholder="My Agent"
-            autoFocus={!agent && !compact}
-          />
-        </>
-      )}
-      <FormLabel text={t("dialog.skillsDir")} />
+      <FormLabel text={t("dialog.directory")} />
       <Field
         value={path}
         onChangeText={(text) => {
           setPath(text);
           setError(null);
         }}
-        placeholder="~/.my-agent/skills"
-        onSubmitEditing={submit}
+        placeholder="~/.agents/skills"
+        autoFocus={!target && !compact}
+        onSubmitEditing={() => void submit()}
       />
+      {suggestions.length > 0 ? (
+        <View style={{ gap: 6 }}>
+          <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>{t("dialog.known")}</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+            {suggestions.map((dir) => (
+              <Chip
+                key={dir.path}
+                label={`${dir.name || t("target.shared")} · ${dir.path}`}
+                active={samePath(path, dir.path)}
+                onPress={() => {
+                  setPath(dir.path);
+                  setError(null);
+                }}
+              />
+            ))}
+          </View>
+        </View>
+      ) : null}
+      <FormLabel text={t("dialog.nameOptional")} />
+      <Field value={name} onChangeText={setName} placeholder={targetLabel(t, { name: "", path })} />
       <FormError text={error} />
-      <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>
-        {builtin ? `${t("dialog.default", { path: agent?.defaultPath ?? "" })} ` : ""}
-        {t("dialog.autoCreate")}
-      </Text>
-      <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        {agent && builtin && path.trim() !== agent.defaultPath ? (
-          <Button label={t("dialog.restoreDefault")} onPress={() => setPath(agent.defaultPath ?? "")} />
-        ) : null}
-        {agent && !builtin ? (
-          <Button
-            tone="danger"
-            icon="Trash2"
-            label={t("common.delete")}
-            disabled={busy}
-            onPress={() => void finish(onDelete(agent))}
-          />
-        ) : null}
-        <View style={{ flex: 1 }} />
+      <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>{t("dialog.autoCreate")}</Text>
+      <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 8 }}>
         <Button label={t("common.cancel")} onPress={onClose} />
-        <Button tone="primary" label={t("common.save")} disabled={busy} onPress={submit} />
+        <Button tone="primary" label={t("common.save")} disabled={busy} onPress={() => void submit()} />
       </View>
     </Sheet>
   );

@@ -12,7 +12,7 @@ import {
   unlink,
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
-import { type HubConfig, resolveAgents } from "../shared/config";
+import type { HubConfig } from "../shared/config";
 import type {
   BrokenLink,
   Cell,
@@ -22,7 +22,7 @@ import type {
   Skill,
 } from "../shared/contracts";
 import { parseSkillDoc } from "./frontmatter";
-import { gitBranch, gitPull } from "./git";
+import { gitInfo, gitPull } from "./git";
 
 const MAX_DEPTH = 6;
 const MAX_DIRS = 20_000;
@@ -112,7 +112,7 @@ export async function discover(roots: readonly string[]) {
   return { found, truncated };
 }
 
-/** Reads what occupies `<agent dir>/<name>` relative to the skill at `skillReal`. */
+/** Reads what occupies `<target dir>/<name>` relative to the skill at `skillReal`. */
 export async function inspect(linkPath: string, skillReal: string): Promise<Cell> {
   let info;
   try {
@@ -210,13 +210,13 @@ function cellError(cell: Cell): never {
 }
 
 function context(config: HubConfig, home: string) {
-  const agents = resolveAgents(config.agents).map((agent) => ({
-    ...agent,
-    dir: expandPath(agent.path, home),
+  const targets = config.targets.map((target) => ({
+    ...target,
+    dir: expandPath(target.path, home),
   }));
   const sources = config.sources.map((path) => ({ path, dir: expandPath(path, home) }));
   const roots = [...new Set(sources.flatMap((s) => (s.dir ? [s.dir] : [])))];
-  return { agents, sources, roots };
+  return { targets, sources, roots };
 }
 
 /** Only directories under a configured source that still contain SKILL.md may be linked or read. */
@@ -254,9 +254,9 @@ function treeOrder(skills: Skill[]): Skill[] {
 }
 
 export async function scan(config: HubConfig, home: string): Promise<ScanResult> {
-  const { agents, sources, roots } = context(config, home);
+  const { targets, sources, roots } = context(config, home);
   const { found, truncated } = await discover(roots);
-  const active = agents.filter((agent) => agent.enabled && agent.dir);
+  const active = targets.filter((target) => target.dir);
 
   const nameCount = new Map<string, number>();
   for (const { dir } of found) nameCount.set(basename(dir), (nameCount.get(basename(dir)) ?? 0) + 1);
@@ -267,8 +267,8 @@ export async function scan(config: HubConfig, home: string): Promise<ScanResult>
     const dirName = basename(dir);
     const cells: Skill["cells"] = {};
     await Promise.all(
-      active.map(async (agent) => {
-        cells[agent.id] = await inspect(join(agent.dir!, dirName), real);
+      active.map(async (target) => {
+        cells[target.id] = await inspect(join(target.dir!, dirName), real);
       }),
     );
     return {
@@ -287,21 +287,21 @@ export async function scan(config: HubConfig, home: string): Promise<ScanResult>
 
   const broken: BrokenLink[] = [];
   const brokenSeen = new Set<string>();
-  for (const agent of active) {
+  for (const target of active) {
     let entries: Dirent[] = [];
     try {
-      entries = await readdir(agent.dir!, { withFileTypes: true });
+      entries = await readdir(target.dir!, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const entry of entries) {
       if (!entry.isSymbolicLink()) continue;
-      const path = join(agent.dir!, entry.name);
+      const path = join(target.dir!, entry.name);
       if (brokenSeen.has(path)) continue;
-      const target = await brokenTarget(path);
-      if (target === null) continue;
+      const linkTarget = await brokenTarget(path);
+      if (linkTarget === null) continue;
       brokenSeen.add(path);
-      broken.push({ agentId: agent.id, path, target });
+      broken.push({ targetId: target.id, path, target: linkTarget });
     }
   }
 
@@ -309,25 +309,24 @@ export async function scan(config: HubConfig, home: string): Promise<ScanResult>
     sources: await Promise.all(
       sources.map(async (source) => {
         const exists = await isDirectory(source.dir);
+        const git = exists ? await gitInfo(source.dir!, home) : null;
         return {
           path: source.path,
           dir: source.dir,
           exists,
           count: found.filter((f) => f.root === source.dir).length,
-          gitBranch: exists ? await gitBranch(source.dir!, home) : null,
+          gitRoot: git?.root ?? null,
+          gitBranch: git?.branch ?? null,
         };
       }),
     ),
-    agents: await Promise.all(
-      agents.map(async (agent) => ({
-        id: agent.id,
-        name: agent.name,
-        path: agent.path,
-        dir: agent.dir,
-        exists: await isDirectory(agent.dir),
-        enabled: agent.enabled,
-        builtin: agent.builtin,
-        defaultPath: agent.defaultPath,
+    targets: await Promise.all(
+      targets.map(async (target) => ({
+        id: target.id,
+        name: target.name,
+        path: target.path,
+        dir: target.dir,
+        exists: await isDirectory(target.dir),
       })),
     ),
     skills,
@@ -337,19 +336,19 @@ export async function scan(config: HubConfig, home: string): Promise<ScanResult>
 }
 
 export async function apply(config: HubConfig, ops: readonly LinkOp[], home: string) {
-  const { agents, roots } = context(config, home);
+  const { targets, roots } = context(config, home);
   const results: (LinkOp & { ok: boolean; error?: string })[] = [];
   for (const op of ops) {
     try {
-      const agent = agents.find((a) => a.id === op.agentId && a.enabled);
-      if (!agent) fail("E_AGENT");
-      if (!agent.dir) fail("E_AGENT_PATH");
+      const target = targets.find((t) => t.id === op.targetId);
+      if (!target) fail("E_TARGET");
+      if (!target.dir) fail("E_TARGET_PATH");
       const skill = await checkSkill(op.skill, roots);
-      const link = join(agent.dir, basename(skill));
+      const link = join(target.dir, basename(skill));
       const cell = await inspect(link, await realpath(skill));
       if (op.action === "deploy") {
         if (cell.state === "none") {
-          await mkdir(agent.dir, { recursive: true });
+          await mkdir(target.dir, { recursive: true });
           await symlink(skill, link, LINK_TYPE);
         } else if (cell.state !== "linked" && cell.state !== "source") {
           cellError(cell);
@@ -367,16 +366,16 @@ export async function apply(config: HubConfig, ops: readonly LinkOp[], home: str
   return { results };
 }
 
-/** Removes symlinks whose targets are gone, only directly inside enabled agent directories. */
+/** Removes symlinks whose targets are gone, only directly inside configured target directories. */
 export async function prune(config: HubConfig, paths: readonly string[], home: string) {
-  const { agents } = context(config, home);
-  const dirs = new Set(agents.flatMap((a) => (a.enabled && a.dir ? [a.dir] : [])));
+  const { targets } = context(config, home);
+  const dirs = new Set(targets.flatMap((t) => (t.dir ? [t.dir] : [])));
   let removed = 0;
   const errors: { path: string; error: string }[] = [];
   for (const input of paths) {
     try {
       const path = resolve(input);
-      if (!isAbsolute(input) || !dirs.has(dirname(path))) fail("E_NOT_AGENT_DIR");
+      if (!isAbsolute(input) || !dirs.has(dirname(path))) fail("E_NOT_TARGET_DIR");
       if ((await brokenTarget(path)) === null) fail("E_NOT_BROKEN");
       await removeLink(path);
       removed++;
@@ -401,7 +400,7 @@ export async function pull(config: HubConfig, inputs: readonly string[], home: s
     try {
       const source = sources.find((s) => s.path === input);
       if (!source?.dir || !(await isDirectory(source.dir))) fail("E_NOT_SOURCE");
-      if ((await gitBranch(source.dir, home)) === null) fail("E_NOT_GIT");
+      if ((await gitInfo(source.dir, home)) === null) fail("E_NOT_GIT");
       results.push({ source: input, ok: true, ...(await gitPull(source.dir)) });
     } catch (error) {
       results.push({ source: input, ok: false, changed: false, message: message(error) });

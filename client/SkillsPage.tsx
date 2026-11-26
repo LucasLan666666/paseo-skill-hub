@@ -3,21 +3,21 @@ import { Icon, Loading, Markdown, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { FlatList, Pressable, ScrollView, Text, View } from "react-native";
-import { shortName } from "../shared/config";
 import {
-  type AgentStatus,
+  type TargetStatus,
   applyRpc,
   type BrokenLink,
   type Cell,
   type LinkOp,
   MAX_BATCH,
   pruneRpc,
-  pullRpc,
   readSkillRpc,
   type Skill,
 } from "../shared/contracts";
 import { SCAN_KEY, useHub } from "./data";
 import { localizeError, type MessageKey, type Translate } from "./i18n";
+import { pullSummary, usePull } from "./pull";
+import { targetLabel, targetReaders } from "./targets";
 import {
   Banner,
   baseName,
@@ -36,7 +36,7 @@ import {
 const ROW_HEIGHT = 44;
 const CHECK_WIDTH = 32;
 
-const opKey = (skill: string, agentId: string) => `${agentId}\n${skill}`;
+const opKey = (skill: string, targetId: string) => `${targetId}\n${skill}`;
 
 function chunks<T>(items: readonly T[]): T[][] {
   const out: T[][] = [];
@@ -52,8 +52,8 @@ function matches(skill: Skill, query: string): boolean {
   );
 }
 
-function cellMessage(t: Translate, skill: Skill, agent: AgentStatus, cell: Cell): string {
-  const vars = { agent: agent.name, skill: skill.name, target: cell.target ?? "" };
+function cellMessage(t: Translate, skill: Skill, targetName: string, cell: Cell): string {
+  const vars = { target: targetName, skill: skill.name, link: cell.target ?? "" };
   if (cell.state === "broken") return t("cell.brokenToast", vars);
   if (cell.state === "source") return t("cell.sourceToast", vars);
   const key: Record<NonNullable<Cell["reason"]>, MessageKey> = {
@@ -71,7 +71,6 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
   const queryClient = useQueryClient();
   const applyOps = useRpc(applyRpc);
   const pruneLinks = useRpc(pruneRpc);
-  const pullSources = useRpc(pullRpc);
   const { settings, scan } = useHub();
 
   const [query, setQuery] = useState("");
@@ -81,10 +80,9 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
   const [preview, setPreview] = useState<{ skill: Skill; open: boolean } | null>(null);
   const [brokenOpen, setBrokenOpen] = useState(false);
   const [pruning, setPruning] = useState(false);
-  const [pulling, setPulling] = useState(false);
 
   const data = scan.data;
-  const agents = useMemo(() => data?.agents.filter((a) => a.enabled && a.dir) ?? [], [data]);
+  const targets = useMemo(() => data?.targets.filter((item) => item.dir) ?? [], [data]);
   const visible = useMemo(
     () => (data?.skills ?? []).filter((skill) => matches(skill, query.trim())),
     [data, query],
@@ -93,15 +91,15 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
     () => (data?.skills ?? []).filter((skill) => selected.has(skill.path)),
     [data, selected],
   );
-  const batchAgents = agents.filter((agent) => !excluded.has(agent.id));
+  const batchTargets = targets.filter((target) => !excluded.has(target.id));
   const missingSources = data?.sources.filter((source) => !source.exists) ?? [];
-  const gitSources = data?.sources.filter((source) => source.gitBranch !== null) ?? [];
+  const git = usePull(data?.sources ?? []);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: SCAN_KEY });
 
   async function run(ops: LinkOp[], skipped = 0) {
     if (ops.length === 0) return;
-    const keys = ops.map((op) => opKey(op.skill, op.agentId));
+    const keys = ops.map((op) => opKey(op.skill, op.targetId));
     setPending((prev) => new Set([...prev, ...keys]));
     try {
       const results = [];
@@ -125,12 +123,12 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
     }
   }
 
-  function pressCell(skill: Skill, agent: AgentStatus) {
-    const cell = skill.cells[agent.id] ?? { state: "none" };
-    const op = { skill: skill.path, agentId: agent.id };
+  function pressCell(skill: Skill, target: TargetStatus) {
+    const cell = skill.cells[target.id] ?? { state: "none" };
+    const op = { skill: skill.path, targetId: target.id };
     if (cell.state === "linked") return void run([{ ...op, action: "undeploy" }]);
     if (cell.state === "none") return void run([{ ...op, action: "deploy" }]);
-    toast.show(cellMessage(t, skill, agent, cell), {
+    toast.show(cellMessage(t, skill, targetLabel(t, target), cell), {
       variant: cell.state === "source" ? "info" : "warning",
       durationMs: 4000,
     });
@@ -140,10 +138,10 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
     const ops: LinkOp[] = [];
     let skipped = 0;
     for (const skill of chosen) {
-      for (const agent of batchAgents) {
-        const state = skill.cells[agent.id]?.state;
-        if (action === "deploy" && state === "none") ops.push({ action, skill: skill.path, agentId: agent.id });
-        else if (action === "undeploy" && state === "linked") ops.push({ action, skill: skill.path, agentId: agent.id });
+      for (const target of batchTargets) {
+        const state = skill.cells[target.id]?.state;
+        if (action === "deploy" && state === "none") ops.push({ action, skill: skill.path, targetId: target.id });
+        else if (action === "undeploy" && state === "linked") ops.push({ action, skill: skill.path, targetId: target.id });
         else if (action === "deploy" && (state === "conflict" || state === "broken")) skipped++;
       }
     }
@@ -182,24 +180,9 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
   }
 
   async function pullAll() {
-    setPulling(true);
-    try {
-      const { results } = await pullSources({ sources: gitSources.map((source) => source.path) });
-      const failed = results.find((result) => !result.ok);
-      const changed = results.filter((result) => result.changed).length;
-      if (failed) {
-        toast.error(t("pull.failed", { source: failed.source, error: localizeError(t, failed.message) }));
-      } else {
-        toast.show(changed > 0 ? t("pull.updated", { count: changed }) : t("pull.upToDate"), {
-          variant: "success",
-        });
-      }
-    } catch (error) {
-      toast.error(localizeError(t, error));
-    } finally {
-      setPulling(false);
-      await refresh();
-    }
+    const summary = pullSummary(t, await git.pullAll());
+    if (summary.error) toast.error(summary.text);
+    else toast.show(summary.text, { variant: "success" });
   }
 
   function toggleAll() {
@@ -260,6 +243,10 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
   }
 
   const allVisibleSelected = visible.length > 0 && visible.every((s) => selected.has(s.path));
+  const targetName = (id: string) => {
+    const target = data.targets.find((item) => item.id === id);
+    return target ? targetLabel(t, target) : id;
+  };
   const someVisibleSelected = visible.some((s) => selected.has(s.path));
 
   return (
@@ -282,11 +269,11 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
             </View>
           ) : null}
         </View>
-        {gitSources.length > 0 ? (
+        {git.gitSources.length > 0 ? (
           <Button
             icon="Download"
-            label={pulling ? t("skills.pulling") : t("skills.pull")}
-            disabled={pulling}
+            label={git.anyPulling ? t("pull.pending") : t("pull.all")}
+            disabled={git.allPulling}
             onPress={() => void pullAll()}
           />
         ) : null}
@@ -299,7 +286,7 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
       </View>
       {!compact ? (
         <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>
-          {t("skills.stats", { skills: data.skills.length, agents: agents.length })}
+          {t("skills.stats", { skills: data.skills.length, targets: targets.length })}
         </Text>
       ) : null}
 
@@ -321,16 +308,16 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
             {t("skills.selected", { count: chosen.length })}
           </Text>
           <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>{t("skills.targets")}</Text>
-          {agents.map((agent) => (
+          {targets.map((target) => (
             <Chip
-              key={agent.id}
-              label={compact ? shortName(agent) : agent.name}
-              active={!excluded.has(agent.id)}
+              key={target.id}
+              label={targetLabel(t, target)}
+              active={!excluded.has(target.id)}
               onPress={() =>
                 setExcluded((prev) => {
                   const next = new Set(prev);
-                  if (next.has(agent.id)) next.delete(agent.id);
-                  else next.add(agent.id);
+                  if (next.has(target.id)) next.delete(target.id);
+                  else next.add(target.id);
                   return next;
                 })
               }
@@ -341,13 +328,13 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
               tone="primary"
               icon="Link"
               label={t("skills.deploy")}
-              disabled={batchAgents.length === 0}
+              disabled={batchTargets.length === 0}
               onPress={() => batch("deploy")}
             />
             <Button
               icon="Unlink"
               label={t("skills.undeploy")}
-              disabled={batchAgents.length === 0}
+              disabled={batchTargets.length === 0}
               onPress={() => batch("undeploy")}
             />
             <IconButton icon="X" label={t("skills.clearSelection")} onPress={() => setSelected(new Set())} />
@@ -379,18 +366,18 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
           text={t("skills.emptySkills.text")}
           action={<Button icon="Settings" label={t("skills.checkSources")} onPress={onOpenSettings} />}
         />
-      ) : agents.length === 0 ? (
+      ) : targets.length === 0 ? (
         <EmptyState
           icon="Bot"
-          title={t("skills.noAgents.title")}
-          text={t("skills.noAgents.text")}
+          title={t("skills.noTargets.title")}
+          text={t("skills.noTargets.text")}
           action={<Button icon="Settings" label={t("common.openSettings")} onPress={onOpenSettings} />}
         />
       ) : (
         <Matrix
           skills={visible}
           allSkills={data.skills}
-          agents={agents}
+          targets={targets}
           selected={selected}
           pending={pending}
           allSelected={allVisibleSelected}
@@ -399,15 +386,12 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
           onToggle={toggleOne}
           onCell={pressCell}
           onOpen={(skill) => setPreview({ skill, open: true })}
-          onAgent={(agent) =>
-            toast.show(
-              t(agent.exists ? "skills.agentDir" : "skills.agentDirMissing", {
-                name: agent.name,
-                dir: agent.dir ?? agent.path,
-              }),
-              { durationMs: 4000 },
-            )
-          }
+          onTarget={(target) => {
+            const readers = targetReaders(target.path);
+            const vars = { name: targetLabel(t, target), dir: target.dir ?? target.path, readers: readers ?? "" };
+            const text = t(readers ? "skills.targetDir" : "skills.targetDirCustom", vars);
+            toast.show(target.exists ? text : text + t("skills.targetMissing"), { durationMs: 4000 });
+          }}
         />
       )}
 
@@ -417,7 +401,7 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
           parentName={data.skills.find((s) => s.path === preview.skill.parent)?.name ?? null}
           childCount={data.skills.filter((s) => s.parent === preview.skill.path).length}
           open={preview.open}
-          agents={agents}
+          targets={targets}
           onClose={() => setPreview({ ...preview, open: false })}
         />
       ) : null}
@@ -427,7 +411,7 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
         {data.broken.map((link) => (
           <View key={link.path} style={{ gap: 2 }}>
             <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "600" }}>
-              {data.agents.find((a) => a.id === link.agentId)?.name ?? link.agentId} · {baseName(link.path)}
+              {targetName(link.targetId)} · {baseName(link.path)}
             </Text>
             <Text selectable style={{ color: colors.foregroundMuted, fontSize: 11, fontFamily: MONO }}>
               {link.path} → {link.target}
@@ -452,20 +436,20 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
 interface MatrixProps {
   skills: readonly Skill[];
   allSkills: readonly Skill[];
-  agents: readonly AgentStatus[];
+  targets: readonly TargetStatus[];
   selected: ReadonlySet<string>;
   pending: ReadonlySet<string>;
   allSelected: boolean;
   someSelected: boolean;
   onToggleAll(): void;
   onToggle(path: string): void;
-  onCell(skill: Skill, agent: AgentStatus): void;
+  onCell(skill: Skill, target: TargetStatus): void;
   onOpen(skill: Skill): void;
-  onAgent(agent: AgentStatus): void;
+  onTarget(target: TargetStatus): void;
 }
 
 /**
- * Agent columns take what is left after a minimum name column, within limits; the name column
+ * Target columns take what is left after a minimum name column, within limits; the name column
  * gets the rest. Only when even the minimums do not fit does the table scroll sideways.
  */
 function fitColumns(width: number, count: number, compact: boolean) {
@@ -481,18 +465,18 @@ function fitColumns(width: number, count: number, compact: boolean) {
 
 function Matrix(props: MatrixProps) {
   const { colors, compact, t } = useKit();
-  const { skills, agents } = props;
+  const { skills, targets } = props;
   const [width, setWidth] = useState(0);
-  const { column, name: nameWidth, total } = fitColumns(width, agents.length, compact);
+  const { column, name: nameWidth, total } = fitColumns(width, targets.length, compact);
   const scrolls = width > 0 && total > width;
 
   const linkedCount = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const skill of props.allSkills)
-      for (const agent of agents)
-        if (skill.cells[agent.id]?.state === "linked") counts[agent.id] = (counts[agent.id] ?? 0) + 1;
+      for (const target of targets)
+        if (skill.cells[target.id]?.state === "linked") counts[target.id] = (counts[target.id] ?? 0) + 1;
     return counts;
-  }, [props.allSkills, agents]);
+  }, [props.allSkills, targets]);
 
   const table = (
     // Inside the horizontal ScrollView the row container stretches the height; flex would
@@ -522,12 +506,12 @@ function Matrix(props: MatrixProps) {
         >
           {t("skills.column", { count: skills.length })}
         </Text>
-        {agents.map((agent) => (
+        {targets.map((target) => (
           <Pressable
-            key={agent.id}
+            key={target.id}
             accessibilityRole="button"
-            accessibilityLabel={t("skills.agentsColumn", { name: agent.name })}
-            onPress={() => props.onAgent(agent)}
+            accessibilityLabel={t("skills.targetColumn", { name: targetLabel(t, target) })}
+            onPress={() => props.onTarget(target)}
             style={{ width: column, alignItems: "center", paddingHorizontal: 2, paddingVertical: 4 }}
           >
             <Text
@@ -541,9 +525,9 @@ function Matrix(props: MatrixProps) {
                 textAlign: "center",
               }}
             >
-              {compact ? shortName(agent) : agent.name}
+              {targetLabel(t, target)}
             </Text>
-            <Text style={{ color: colors.foregroundMuted, fontSize: 10 }}>{linkedCount[agent.id] ?? 0}</Text>
+            <Text style={{ color: colors.foregroundMuted, fontSize: 10 }}>{linkedCount[target.id] ?? 0}</Text>
           </Pressable>
         ))}
       </View>
@@ -551,7 +535,7 @@ function Matrix(props: MatrixProps) {
         style={{ flex: 1 }}
         data={skills}
         keyExtractor={(skill) => skill.path}
-        extraData={[props.selected, props.pending, agents, column, nameWidth]}
+        extraData={[props.selected, props.pending, targets, column, nameWidth]}
         initialNumToRender={30}
         windowSize={11}
         getItemLayout={(_, index) => ({ length: ROW_HEIGHT, offset: ROW_HEIGHT * index, index })}
@@ -561,7 +545,7 @@ function Matrix(props: MatrixProps) {
         renderItem={({ item }) => (
           <Row
             skill={item}
-            agents={agents}
+            targets={targets}
             column={column}
             nameWidth={nameWidth}
             selected={props.selected.has(item.path)}
@@ -600,7 +584,7 @@ function Matrix(props: MatrixProps) {
 
 function Row({
   skill,
-  agents,
+  targets,
   column,
   nameWidth,
   selected,
@@ -610,13 +594,13 @@ function Row({
   onOpen,
 }: {
   skill: Skill;
-  agents: readonly AgentStatus[];
+  targets: readonly TargetStatus[];
   column: number;
   nameWidth: number;
   selected: boolean;
   pending: ReadonlySet<string>;
   onToggle(path: string): void;
-  onCell(skill: Skill, agent: AgentStatus): void;
+  onCell(skill: Skill, target: TargetStatus): void;
   onOpen(skill: Skill): void;
 }) {
   const { colors, compact, t } = useKit();
@@ -662,13 +646,13 @@ function Row({
         </Text>
         {skill.duplicate ? <Tag label={t("skills.duplicate")} color={colors.statusWarning} /> : null}
       </Pressable>
-      {agents.map((agent) => (
-        <View key={agent.id} style={{ width: column, alignItems: "center" }}>
+      {targets.map((target) => (
+        <View key={target.id} style={{ width: column, alignItems: "center" }}>
           <CellButton
-            cell={skill.cells[agent.id]}
-            pending={pending.has(opKey(skill.path, agent.id))}
-            label={`${skill.name} → ${agent.name}`}
-            onPress={() => onCell(skill, agent)}
+            cell={skill.cells[target.id]}
+            pending={pending.has(opKey(skill.path, target.id))}
+            label={`${skill.name} → ${targetLabel(t, target)}`}
+            onPress={() => onCell(skill, target)}
           />
         </View>
       ))}
@@ -746,14 +730,14 @@ function Preview({
   parentName,
   childCount,
   open,
-  agents,
+  targets,
   onClose,
 }: {
   skill: Skill;
   parentName: string | null;
   childCount: number;
   open: boolean;
-  agents: readonly AgentStatus[];
+  targets: readonly TargetStatus[];
   onClose(): void;
 }) {
   const { colors, t } = useKit();
@@ -763,7 +747,7 @@ function Preview({
     queryFn: () => readSkill({ path: skill.path }),
     enabled: open,
   });
-  const deployed = agents.filter((agent) => skill.cells[agent.id]?.state === "linked");
+  const deployed = targets.filter((target) => skill.cells[target.id]?.state === "linked");
   return (
     <Sheet title={skill.name} open={open} onClose={onClose}>
       {skill.description ? (
@@ -775,7 +759,7 @@ function Preview({
         </Text>
         <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>
           {deployed.length > 0
-            ? t("preview.deployedTo", { agents: deployed.map((a) => a.name).join(", ") })
+            ? t("preview.deployedTo", { targets: deployed.map((item) => targetLabel(t, item)).join(", ") })
             : t("preview.notDeployed")}
         </Text>
         {parentName !== null || childCount > 0 ? (

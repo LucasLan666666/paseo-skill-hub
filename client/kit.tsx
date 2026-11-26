@@ -208,51 +208,6 @@ export function Checkbox({
   );
 }
 
-export function Switch({
-  value,
-  label,
-  disabled,
-  onChange,
-}: {
-  value: boolean;
-  label: string;
-  disabled?: boolean;
-  onChange(value: boolean): void;
-}) {
-  const { colors } = useKit();
-  return (
-    <Pressable
-      accessibilityRole="switch"
-      accessibilityLabel={label}
-      accessibilityState={{ checked: value, disabled }}
-      disabled={disabled}
-      onPress={() => onChange(!value)}
-      hitSlop={6}
-      style={{
-        width: 34,
-        height: 20,
-        borderRadius: 10,
-        padding: 2,
-        justifyContent: "center",
-        alignItems: value ? "flex-end" : "flex-start",
-        backgroundColor: value ? colors.accent : colors.surface2,
-        borderWidth: value ? 0 : 1,
-        borderColor: colors.border,
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      <View
-        style={{
-          width: 15,
-          height: 15,
-          borderRadius: 8,
-          backgroundColor: value ? colors.accentForeground : colors.foregroundMuted,
-        }}
-      />
-    </Pressable>
-  );
-}
-
 export function Chip({
   label,
   active,
