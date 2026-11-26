@@ -2,11 +2,10 @@ import {
   Loading,
   SettingsCard,
   SettingsRow,
-  SettingsSection,
   SettingsSelect,
   useToast,
 } from "@getpaseo/plugin/client/ui";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Text, View } from "react-native";
 import {
   type HubConfig,
@@ -107,10 +106,10 @@ export function SettingsPage() {
 
   return (
     <View style={{ gap: 24 }}>
-      <SettingsSection
+      <Section
         title={t("settings.sources")}
-        trailing={
-          <View style={{ flexDirection: "row", gap: 8 }}>
+        actions={
+          <>
             {git.gitSources.length > 0 ? (
               <Button
                 icon="Download"
@@ -120,7 +119,7 @@ export function SettingsPage() {
               />
             ) : null}
             <Button icon="Plus" label={t("common.add")} onPress={() => setEditing({ kind: "source" })} />
-          </View>
+          </>
         }
       >
         <SettingsCard>
@@ -167,11 +166,11 @@ export function SettingsPage() {
             })
           )}
         </SettingsCard>
-      </SettingsSection>
+      </Section>
 
-      <SettingsSection
+      <Section
         title={t("settings.targets")}
-        trailing={
+        actions={
           <Button
             icon="Plus"
             label={t("settings.addTarget")}
@@ -204,10 +203,10 @@ export function SettingsPage() {
             </SettingsRow>
           ))}
         </SettingsCard>
-        <Text style={{ color: colors.foregroundMuted, fontSize: 12, marginTop: 8 }}>{t("settings.targetsNote")}</Text>
-      </SettingsSection>
+        <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>{t("settings.targetsNote")}</Text>
+      </Section>
 
-      <SettingsSection title={t("settings.language")}>
+      <Section title={t("settings.language")}>
         <SettingsCard>
           <SettingsSelect
             label={t("settings.languageLabel")}
@@ -217,7 +216,7 @@ export function SettingsPage() {
             onValueChange={(language) => void save({ ...values, language })}
           />
         </SettingsCard>
-      </SettingsSection>
+      </Section>
 
       {editing?.kind === "source" ? (
         <SourceDialog
@@ -234,6 +233,33 @@ export function SettingsPage() {
           onSave={saveTarget}
         />
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * Section heading with optional actions on the same line. The host SettingsSection `trailing` slot
+ * is shorter than these buttons, so they overlapped the card below on mobile.
+ */
+function Section({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
+  const { colors } = useKit();
+  return (
+    <View style={{ gap: 8 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 8,
+          minHeight: 32,
+          paddingLeft: 4,
+        }}
+      >
+        <Text style={{ flexShrink: 1, color: colors.foregroundMuted, fontSize: 13, fontWeight: "500" }}>{title}</Text>
+        {actions ? <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>{actions}</View> : null}
+      </View>
+      {children}
     </View>
   );
 }

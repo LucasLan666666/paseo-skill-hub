@@ -24,7 +24,7 @@ export function HubScreen({ theme, layout, params }: PluginScreenProps) {
         {tab === "skills" ? (
           <SkillsPage onOpenSettings={() => setTab("settings")} />
         ) : (
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: 8, paddingBottom: pad }}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: pad }}>
             <View style={{ width: "100%", maxWidth: 760, alignSelf: "center" }}>
               <SettingsPage />
             </View>
