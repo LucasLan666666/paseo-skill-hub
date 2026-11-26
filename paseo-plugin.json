@@ -8,6 +8,11 @@
       "description": "通过软链接把 Skill 目录部署到各 Agent 读取的目录，集中管理各 Agent 可用的 Skills。"
     }
   },
+  "media": [
+    "assets/skills.png",
+    "assets/preview.png",
+    "assets/settings.png"
+  ],
   "requirements": {
     "paseo": ">=0.17.4"
   }
