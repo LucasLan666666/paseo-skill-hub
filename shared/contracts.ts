@@ -76,6 +76,8 @@ const scanResultSchema = z.object({
   skills: z.array(skillSchema),
   broken: z.array(brokenLinkSchema),
   truncated: z.boolean(),
+  /** The daemon user's home directory, used to show paths as `~/…`. */
+  home: z.string(),
 });
 export type ScanResult = z.infer<typeof scanResultSchema>;
 

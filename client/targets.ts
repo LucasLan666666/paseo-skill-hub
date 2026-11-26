@@ -15,3 +15,10 @@ export function targetLabel(t: Translate, target: { name: string; path: string }
 export function targetReaders(path: string): string | null {
   return knownDir(path)?.readers ?? null;
 }
+
+/** Shows paths under the daemon user's home directory as `~/…`. */
+export function tildify(path: string, home: string): string {
+  if (!home) return path;
+  if (path === home) return "~";
+  return path.startsWith(home + "/") || path.startsWith(home + "\\") ? `~${path.slice(home.length)}` : path;
+}

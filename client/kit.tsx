@@ -71,18 +71,21 @@ export function Sheet({
 export const MONO = Platform.select({
   ios: "Menlo",
   android: "monospace",
-  default: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  default: "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace",
 });
 
 export function baseName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
-/** A translucent fill that works with any theme color format. */
+/**
+ * A translucent fill that works with any theme color format. It sits below its siblings: on web an
+ * absolutely positioned layer would otherwise paint over in-flow content such as icons.
+ */
 export function Wash({ color, opacity }: { color: string; opacity: number }) {
   return (
     <View
-      style={[StyleSheet.absoluteFill, { backgroundColor: color, opacity, pointerEvents: "none" }]}
+      style={[StyleSheet.absoluteFill, { backgroundColor: color, opacity, zIndex: -1, pointerEvents: "none" }]}
     />
   );
 }

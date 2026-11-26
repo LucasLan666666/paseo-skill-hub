@@ -332,6 +332,7 @@ export async function scan(config: HubConfig, home: string): Promise<ScanResult>
     skills,
     broken,
     truncated,
+    home: resolve(home),
   };
 }
 

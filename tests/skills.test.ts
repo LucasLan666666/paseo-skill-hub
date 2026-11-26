@@ -11,7 +11,7 @@ import { apply, expandPath, prune, pull, readSkill, scan } from "../server/skill
 import { gitInfo } from "../server/git";
 import { ERROR_CODES } from "../shared/contracts";
 import { localizeError, type MessageKey, translator } from "../client/i18n";
-import { targetLabel } from "../client/targets";
+import { targetLabel, tildify } from "../client/targets";
 import { pullStatus, pullSummary } from "../client/pull";
 
 let home: string;
@@ -101,6 +101,12 @@ describe("paths and targets", () => {
         { id: "custom-1", name: "Mine", path: "~/mine" },
       ],
     });
+  });
+
+  test("shows paths under home with a tilde", () => {
+    assert.equal(tildify("/home/u/skills/x", "/home/u"), "~/skills/x");
+    assert.equal(tildify("/home/u", "/home/u"), "~");
+    assert.equal(tildify("/home/user2/x", "/home/u"), "/home/user2/x");
   });
 
   test("labels targets by name, known directory, or folder", () => {

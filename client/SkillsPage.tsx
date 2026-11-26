@@ -17,7 +17,7 @@ import {
 import { SCAN_KEY, useHub } from "./data";
 import { localizeError, type MessageKey, type Translate } from "./i18n";
 import { pullSummary, usePull } from "./pull";
-import { targetLabel, targetReaders } from "./targets";
+import { targetLabel, targetReaders, tildify } from "./targets";
 import {
   Banner,
   baseName,
@@ -388,7 +388,7 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
           onOpen={(skill) => setPreview({ skill, open: true })}
           onTarget={(target) => {
             const readers = targetReaders(target.path);
-            const vars = { name: targetLabel(t, target), dir: target.dir ?? target.path, readers: readers ?? "" };
+            const vars = { name: targetLabel(t, target), dir: target.path, readers: readers ?? "" };
             const text = t(readers ? "skills.targetDir" : "skills.targetDirCustom", vars);
             toast.show(target.exists ? text : text + t("skills.targetMissing"), { durationMs: 4000 });
           }}
@@ -402,6 +402,7 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
           childCount={data.skills.filter((s) => s.parent === preview.skill.path).length}
           open={preview.open}
           targets={targets}
+          home={data.home}
           onClose={() => setPreview({ ...preview, open: false })}
         />
       ) : null}
@@ -414,7 +415,7 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings(): void }) {
               {targetName(link.targetId)} · {baseName(link.path)}
             </Text>
             <Text selectable style={{ color: colors.foregroundMuted, fontSize: 11, fontFamily: MONO }}>
-              {link.path} → {link.target}
+              {tildify(link.path, data.home)} → {tildify(link.target, data.home)}
             </Text>
           </View>
         ))}
@@ -713,13 +714,14 @@ function CellButton({
         borderRadius: 7,
         borderWidth: 1.5,
         borderColor: look.color,
+        backgroundColor: look.wash === 1 ? look.color : "transparent",
         alignItems: "center",
         justifyContent: "center",
         overflow: "hidden",
         opacity: pending ? 0.35 : pressed ? 0.7 : 1,
       })}
     >
-      {look.wash > 0 ? <Wash color={look.color} opacity={look.wash} /> : null}
+      {look.wash > 0 && look.wash < 1 ? <Wash color={look.color} opacity={look.wash} /> : null}
       {look.icon ? <Icon name={look.icon} size={14} color={look.iconColor} /> : null}
     </Pressable>
   );
@@ -731,6 +733,7 @@ function Preview({
   childCount,
   open,
   targets,
+  home,
   onClose,
 }: {
   skill: Skill;
@@ -738,6 +741,7 @@ function Preview({
   childCount: number;
   open: boolean;
   targets: readonly TargetStatus[];
+  home: string;
   onClose(): void;
 }) {
   const { colors, t } = useKit();
@@ -755,7 +759,7 @@ function Preview({
       ) : null}
       <View style={{ gap: 4 }}>
         <Text selectable style={{ color: colors.foregroundMuted, fontSize: 11, fontFamily: MONO }}>
-          {skill.path}
+          {tildify(skill.path, home)}
         </Text>
         <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>
           {deployed.length > 0
