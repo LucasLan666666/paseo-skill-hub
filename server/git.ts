@@ -1,7 +1,21 @@
 import { execFile } from "node:child_process";
 import { resolve, sep } from "node:path";
 
-function git(args: string[], cwd: string, timeout: number): Promise<string> {
+function git(
+  args: string[],
+  cwd: string,
+  timeout: number,
+  options: { defaultBatchSsh?: boolean } = {},
+): Promise<string> {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    // Never wait for a terminal or GUI credential prompt on the daemon.
+    GIT_TERMINAL_PROMPT: "0",
+    GCM_INTERACTIVE: "never",
+  };
+  if (options.defaultBatchSsh && !env.GIT_SSH_COMMAND) {
+    env.GIT_SSH_COMMAND = "ssh -o BatchMode=yes";
+  }
   return new Promise((done, fail) => {
     execFile(
       "git",
@@ -10,12 +24,7 @@ function git(args: string[], cwd: string, timeout: number): Promise<string> {
         cwd,
         timeout,
         maxBuffer: 1024 * 1024,
-        // Never wait for a credential or passphrase prompt on the daemon.
-        env: {
-          ...process.env,
-          GIT_TERMINAL_PROMPT: "0",
-          GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes",
-        },
+        env,
       },
       (error, stdout, stderr) => {
         if (!error) return done(`${stdout}${stderr}`);
@@ -24,6 +33,14 @@ function git(args: string[], cwd: string, timeout: number): Promise<string> {
       },
     );
   });
+}
+
+async function hasSshCommandConfig(dir: string): Promise<boolean> {
+  try {
+    return (await git(["config", "--get", "core.sshCommand"], dir, 5000)).trim().length > 0;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -48,7 +65,10 @@ export async function gitInfo(dir: string, home: string): Promise<{ root: string
 export async function gitPull(dir: string): Promise<{ changed: boolean; message: string }> {
   const head = () => git(["rev-parse", "HEAD"], dir, 5000).then((out) => out.trim());
   const before = await head();
-  const output = await git(["pull", "--ff-only"], dir, 120_000);
+  const defaultBatchSsh = !(await hasSshCommandConfig(dir));
+  const output = await git(["-c", "pull.rebase=false", "pull", "--ff-only"], dir, 120_000, {
+    defaultBatchSsh,
+  });
   const after = await head();
   const lines = output.trim().split("\n").filter(Boolean);
   return { changed: before !== after, message: lines.at(-1) ?? "" };

@@ -305,6 +305,43 @@ describe("git sources", () => {
     const after = await scan(cfg, home);
     assert.ok(after.skills.some((s) => s.dirName === "second"));
   });
+
+  test("preserves core.sshCommand and refuses to rebase diverged branches", async () => {
+    const origin = join(home, "git/rebase-origin.git");
+    const writer = join(home, "git/rebase-writer");
+    const clone = join(home, "git/rebase-clone");
+    sh(`git init -q --bare -b main ${origin}`, home);
+    sh(`git clone -q ${origin} ${writer}`, home);
+    await skill(join(writer, "skills/base"));
+    sh("git add . && git -c user.email=t@t -c user.name=t commit -qm base && git push -q origin HEAD:main", writer);
+    sh(`git clone -q ${origin} ${clone}`, home);
+
+    // Local + upstream commits diverge while pull.rebase=true: pull must still fail without rebasing.
+    await skill(join(clone, "skills/local-only"));
+    sh("git add . && git -c user.email=t@t -c user.name=t commit -qm local", clone);
+    sh("git config pull.rebase true", clone);
+    const beforeHead = sh("git rev-parse HEAD", clone).trim();
+    await skill(join(writer, "skills/remote-only"));
+    sh("git add . && git -c user.email=t@t -c user.name=t commit -qm remote && git push -q origin HEAD:main", writer);
+
+    const cfg = config({ sources: ["~/git/rebase-clone/skills"] });
+    const { results } = await pull(cfg, ["~/git/rebase-clone/skills"], home);
+    assert.equal(results[0].ok, false);
+    assert.equal(sh("git rev-parse HEAD", clone).trim(), beforeHead);
+
+    // Custom core.sshCommand must not be clobbered by a default GIT_SSH_COMMAND.
+    const sshRepo = join(home, "git/ssh-repo");
+    const marker = join(home, "git/ssh-marker");
+    await mkdir(sshRepo, { recursive: true });
+    sh("git init -q -b main && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init", sshRepo);
+    sh("git remote add origin git@example.invalid:org/repo.git", sshRepo);
+    sh("git config branch.main.remote origin && git config branch.main.merge refs/heads/main", sshRepo);
+    sh(`git config core.sshCommand 'sh -c "touch ${marker}; exit 1"'`, sshRepo);
+    const sshCfg = config({ sources: ["~/git/ssh-repo"] });
+    const sshRes = await pull(sshCfg, ["~/git/ssh-repo"], home);
+    assert.equal(sshRes.results[0].ok, false);
+    assert.ok((await lstat(marker)).isFile());
+  });
 });
 
 describe("i18n", () => {
