@@ -2,6 +2,7 @@
   "id": "skill-hub",
   "name": "Skill Hub",
   "description": "Manage which skills your agents can use by linking skill folders into the directories they read.",
+  "icon": "assets/icon.png",
   "translations": {
     "zh-CN": {
       "name": "Skill Hub",
