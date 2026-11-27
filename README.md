@@ -67,7 +67,7 @@ Most agents read the shared `~/.agents/skills`; Claude Code reads `~/.claude/ski
 - **Live filesystem truth.** Every refresh reads disk directly. Existing symlinks (including relative links) show as deployed; occupied paths show as conflicts; dangling links are surfaced for confirmed cleanup.
 - **Safe git pulls.** Pull a single repository from its row in Settings, or update all git sources at once with **Pull all**, with per-repository progress and result feedback.
 - **Persistent per-host settings.** Each daemon host keeps its own sources, target directories, and language in a local JSON file that survives uninstalling and reinstalling the plugin. All file operations run on the currently selected host.
-- **Cross-platform & bilingual UI.** Works on Desktop, Web, and Mobile in English, Simplified Chinese, or following the system language.
+- **Cross-platform & bilingual UI.** Works on Desktop, Web, and Mobile in English, Simplified Chinese, or following Paseo’s language.
 
 ## Screenshots
 
@@ -172,7 +172,7 @@ You can add any absolute path (including `~/…` or Windows paths) under **Setti
 
 - **Discovery limits:** Recursive walk up to **6 levels** deep (capped at 20,000 directories per scan), skipping hidden directories (`.…`), `node_modules`, and symlinked directories.
 - **Git detection:** Any source located inside a git work tree can be pulled, except repositories rooted at your home directory (`~`) or above (dotfiles repos are ignored).
-- **Display language:** `System` (follows Paseo/OS), `English`, or `简体中文`.
+- **Display language:** `Follow Paseo`, `English`, or `简体中文`.
 
 ## Safe by design
 

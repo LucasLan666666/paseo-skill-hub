@@ -1,7 +1,7 @@
 {
   "name": "paseo-skill-hub",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Manage which skills your agents can use by linking skill folders into the directories they read.",
   "license": "MIT",
   "repository": {

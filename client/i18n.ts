@@ -1,11 +1,6 @@
 import type { LanguageChoice } from "../shared/config";
 import { ERROR_CODES } from "../shared/contracts";
 
-/**
- * Bundled string tables. The host translation hook is avoided on purpose: on native clients it
- * is new and a throw during render is fatal, and it cannot force a language. "System" follows the
- * device locale through Intl.
- */
 const en = {
   "tab.skills": "Skills",
   "tab.settings": "Settings",
@@ -101,7 +96,7 @@ const en = {
   "settings.invalid": "Invalid settings: {error}",
   "settings.reset": "Reset to defaults",
   "settings.readError": "Cannot read settings: {error}",
-  "lang.system": "System",
+  "lang.system": "Follow Paseo",
 
   "dialog.addSource": "Add source directory",
   "dialog.directory": "Directory",
@@ -240,7 +235,7 @@ const zhCN: Record<MessageKey, string> = {
   "settings.invalid": "配置无效：{error}",
   "settings.reset": "恢复默认",
   "settings.readError": "无法读取配置：{error}",
-  "lang.system": "跟随系统",
+  "lang.system": "跟随 Paseo",
 
   "dialog.addSource": "添加来源目录",
   "dialog.directory": "目录",
@@ -288,18 +283,9 @@ export type Translate = (key: MessageKey, vars?: Vars) => string;
 /** Display names are written in their own language, so they never change with the UI language. */
 export const LANGUAGE_NAMES: Record<Lang, string> = { en: "English", "zh-CN": "简体中文" };
 
-function systemLang(): Lang {
-  try {
-    const locale = Intl.DateTimeFormat().resolvedOptions().locale;
-    if (locale.toLowerCase().startsWith("zh")) return "zh-CN";
-  } catch {
-    // An engine without Intl falls back to English.
-  }
-  return "en";
-}
-
-export function resolveLang(choice: LanguageChoice | undefined): Lang {
-  return !choice || choice === "system" ? systemLang() : choice;
+export function resolveLang(choice: LanguageChoice | undefined, paseoLocale: string): Lang {
+  if (choice && choice !== "system") return choice;
+  return /^zh(?:-|$)/i.test(paseoLocale) ? "zh-CN" : "en";
 }
 
 export function translator(lang: Lang): Translate {

@@ -1,4 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
+import { defineTranslations, useTranslation } from "@getpaseo/plugin/client";
 import { Icon, Modal, TextInput } from "@getpaseo/plugin/client/ui";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { Platform, Pressable, StyleSheet, Text, type TextInputProps, View } from "react-native";
@@ -13,6 +14,9 @@ interface Kit {
   lang: Lang;
   t: Translate;
 }
+
+// Subscribe to Paseo's locale while keeping the plugin's manual language overrides.
+const hostMessages = defineTranslations({ resources: { en: { name: "Skill Hub" } } });
 
 const KitContext = createContext<Kit | null>(null);
 
@@ -31,7 +35,8 @@ export function KitProvider({
 }) {
   useConfigSync();
   const settings = useConfig();
-  const lang = resolveLang(settings.status === "ready" ? settings.values.language : undefined);
+  const { locale } = useTranslation(hostMessages);
+  const lang = resolveLang(settings.status === "ready" ? settings.values.language : undefined, locale);
   const value = useMemo(
     () => ({ colors: theme.colors, compact, lang, t: translator(lang) }),
     [theme, compact, lang],

@@ -12,7 +12,7 @@ import { gitInfo } from "../server/git";
 import { createConfigStore, defaultConfigPath } from "../server/store";
 import { readFile } from "node:fs/promises";
 import { ERROR_CODES } from "../shared/contracts";
-import { localizeError, type MessageKey, translator } from "../client/i18n";
+import { localizeError, resolveLang, type MessageKey, translator } from "../client/i18n";
 import { targetLabel, tildify } from "../client/targets";
 import { pullStatus, pullSummary } from "../client/pull";
 
@@ -347,6 +347,15 @@ describe("git sources", () => {
 });
 
 describe("i18n", () => {
+  test("follows the Paseo locale by default and respects explicit language choices", () => {
+    assert.equal(resolveLang(undefined, "zh-CN"), "zh-CN");
+    assert.equal(resolveLang("system", "zh-Hans"), "zh-CN");
+    assert.equal(resolveLang("system", "en-US"), "en");
+    assert.equal(resolveLang("system", "fr"), "en");
+    assert.equal(resolveLang("en", "zh-CN"), "en");
+    assert.equal(resolveLang("zh-CN", "en"), "zh-CN");
+  });
+
   test("translates, interpolates and falls back", () => {
     const zh = translator("zh-CN");
     assert.equal(zh("skills.done", { count: 3 }), "已完成 3 项");
